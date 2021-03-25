@@ -1,0 +1,87 @@
+ARG UBUNTU_VERSION=20.04
+ARG TARGET_ROOT=/target-root
+ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+ARG PYTHON_VERSION=3.8.8
+
+# A base image with common tools for crosscompilation
+FROM ubuntu:${UBUNTU_VERSION} AS build-base
+
+# Setup environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGET_ROOT
+ARG http_proxy
+ARG https_proxy
+
+# Add source for target arch
+RUN echo \
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu focal-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse"\
+ > /etc/apt/sources.list
+
+# Get crosscompilation toolchain
+RUN dpkg --add-architecture armhf
+RUN apt-get update && apt-get install -yf --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        crossbuild-essential-armhf \
+        cmake \
+        curl \
+        gfortran-arm-linux-gnueabihf \
+        git \
+        gfortran \
+        python3-dev \
+        python3-pip \
+        wget \
+ && update-ca-certificates \
+ && apt-get clean
+
+RUN mkdir $TARGET_ROOT
+
+
+# Build OpenBLAS
+FROM build-base AS build-openblas
+ARG TARGET_ROOT
+WORKDIR /build
+RUN git clone --branch v0.3.14 https://github.com/xianyi/OpenBLAS.git
+WORKDIR /build/OpenBLAS
+RUN HAVE_NEON=1 make TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
+RUN make install PREFIX=$TARGET_ROOT/usr
+
+
+# Build Python
+FROM build-base AS build-python
+ARG PYTHON_VERSION
+ARG TARGET_ROOT
+ENV CFLAGS=$ARCH_CFLAGS
+ENV CACHE_DIR=/tmp/pkg
+ENV ARCHDIR=arm-linux-gnueabihf
+ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$ARCHDIR/pkgconfig:/target-root/usr/lib/$ARCHDIR/pkgconfig/:/target-root/lib/pkgconfig/
+RUN mkdir -p $CACHE_DIR
+
+# Download target Python3
+RUN apt-get update && apt-get install --download-only -o=dir::cache=$CACHE_DIR -y \
+        python3.8:armhf \
+        python3.8-dev:armhf \ 
+        python3.8-minimal:armhf \ 
+WORKDIR $TARGET_ROOT
+RUN for f in $CACHE_DIR/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done \
+ && rm -rf $CACHE_DIR/*
+
+RUN ls $TARGET_ROOT
+
+# Compile numpy with OpenBLAS
+WORKDIR /build
+COPY --from=build-openblas $TARGET_ROOT /opt/OpenBLAS
+
+
+FROM arm32v7/ubuntu:20.04 AS runtime
+ARG TARGET_ROOT
+COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
+COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
+ENV LD_LIBRARY_PATH=/target-root/lib/arm-linux-gnueabihf/:/target-root/usr/lib/:/target-root/usr/lib/arm-linux-gnueabihf
