@@ -1,7 +1,11 @@
-ARG UBUNTU_VERSION=20.04
-ARG TARGET_ROOT=/target-root
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+ARG BUILD_ROOT=/build-root
+ARG NUMPY_VERSION=v1.19.5
 ARG PYTHON_VERSION=3.8.8
+ARG SCIPY_VERSION=v1.5.4
+ARG TARGET_ROOT=/target-root
+ARG UBUNTU_VERSION=20.04
+
 
 # A base image with common tools for crosscompilation
 FROM ubuntu:${UBUNTU_VERSION} AS build-base
@@ -24,7 +28,7 @@ deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-backports mai
 deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse"\
  > /etc/apt/sources.list
 
-# Get crosscompilation toolchain
+# Get crosscompilation toolchain and related packages
 RUN dpkg --add-architecture armhf
 RUN apt-get update && apt-get install -yf --no-install-recommends \
         build-essential \
@@ -37,51 +41,129 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         gfortran \
         python3-dev \
         python3-pip \
+        python3-venv \
         wget \
  && update-ca-certificates \
  && apt-get clean
 
-RUN mkdir $TARGET_ROOT
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+
+FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
+ARG BUILD_ROOT
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        gfortran \
+        git \
+    && update-ca-certificates
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
 
 
 # Build OpenBLAS
 FROM build-base AS build-openblas
+ARG OPENBLAS_BUILD_CORES=2
+ARG BUILD_ROOT
 ARG TARGET_ROOT
-WORKDIR /build
+WORKDIR ${BUILD_ROOT}
 RUN git clone --branch v0.3.14 https://github.com/xianyi/OpenBLAS.git
-WORKDIR /build/OpenBLAS
-RUN HAVE_NEON=1 make TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
+WORKDIR ${BUILD_ROOT}/OpenBLAS
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
-# Build Python
-FROM build-base AS build-python
-ARG PYTHON_VERSION
+FROM build-base-arm AS build-python
+ARG BUILD_ROOT
+ARG TARGET_ROOT
+RUN mkdir -p $BUILD_ROOT/python
+RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
+        file libexpat1 libexpat1-dev libmagic-mgc libmagic1 libmpdec2 \
+        libpython3-dev libpython3-stdlib libpython3.8 libpython3.8-dev \
+        libpython3.8-minimal libpython3.8-stdlib mime-support python3 \
+        python3-dev python3-distutils python3-lib2to3 python3-minimal \
+        python3.8 python3.8-dev python3.8-minimal zlib1g-dev
+WORKDIR $TARGET_ROOT
+RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done 
+RUN mv $TARGET_ROOT/lib/arm-linux-gnueabihf/* $TARGET_ROOT/usr/lib/arm-linux-gnueabihf/ && rm -rf $TARGET_ROOT/lib
+WORKDIR ${BUILD_ROOT}/pip
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
+
+
+# Build NumPy with OpenBLAS
+# This build is done emulated right now until more work
+# has been put in researching how to crosscompile
+# python packages
+# Building numpy like this vs apt-get shows ~5% lower proc times
+# in basic math ops
+# Building numpy with OpenBLAS as BLAS/Lapack vs built-in BLAS/Lapack
+# shows between 50% to 99% lower proc times depending on the linalg op used
+FROM build-base-arm AS build-python-numpy
+ARG ARCH_CFLAGS
+ARG BUILD_ROOT
+ARG NUMPY_BUILD_CORES=2
+ARG NUMPY_VERSION
 ARG TARGET_ROOT
 ENV CFLAGS=$ARCH_CFLAGS
-ENV CACHE_DIR=/tmp/pkg
-ENV ARCHDIR=arm-linux-gnueabihf
-ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$ARCHDIR/pkgconfig:/target-root/usr/lib/$ARCHDIR/pkgconfig/:/target-root/lib/pkgconfig/
-RUN mkdir -p $CACHE_DIR
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
+COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+WORKDIR $BUILD_ROOT
+RUN git clone --branch ${NUMPY_VERSION} https://github.com/numpy/numpy
+WORKDIR $BUILD_ROOT/numpy
+ENV CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/python3.8 $ARCH_CFLAGS"
+RUN cp site.cfg.example site.cfg
+RUN echo "[openblas]\n" \
+         "libraries = openblas\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         "include_dirs = ${BUILD_ROOT}/usr/include\n" \
+         "[default]\n" \
+         "include_dirs = ${BUILD_ROOT}/usr/include\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         "[lapack]\n" \
+         "lapack_libs = openblas\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         >> site.cfg
+RUN python3.8 -m pip install cython
+RUN python3.8 setup.py config 
+RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
+RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
+RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
 
-# Download target Python3
-RUN apt-get update && apt-get install --download-only -o=dir::cache=$CACHE_DIR -y \
-        python3.8:armhf \
-        python3.8-dev:armhf \ 
-        python3.8-minimal:armhf \ 
-WORKDIR $TARGET_ROOT
-RUN for f in $CACHE_DIR/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done \
- && rm -rf $CACHE_DIR/*
 
-RUN ls $TARGET_ROOT
-
-# Compile numpy with OpenBLAS
-WORKDIR /build
-COPY --from=build-openblas $TARGET_ROOT /opt/OpenBLAS
-
-
-FROM arm32v7/ubuntu:20.04 AS runtime
+# Build SciPy with OpenBLAS
+FROM build-base-arm AS build-python-scipy
+ARG ARCH_CFLAGS
+ARG BUILD_ROOT
+ARG SCIPY_BUILD_CORES=2
+ARG SCIPY_VERSION
 ARG TARGET_ROOT
-COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
-COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
-ENV LD_LIBRARY_PATH=/target-root/lib/arm-linux-gnueabihf/:/target-root/usr/lib/:/target-root/usr/lib/arm-linux-gnueabihf
+ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
+ENV CFLAGS=$ARCH_CFLAGS
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
+WORKDIR $BUILD_ROOT
+RUN git clone --branch ${SCIPY_VERSION} https://github.com/scipy/scipy.git
+WORKDIR $BUILD_ROOT/scipy
+COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
+ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
+ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
+RUN python3.8 -m pip install cython tempita
+RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
+RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
+
+
+FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS runtime
+ARG TARGET_ROOT
+ENV LD_LIBRARY_PATH=/usr/lib:/usr/lib/arm-linux-gnueabihf/
+COPY --from=build-openblas $TARGET_ROOT /
+COPY --from=build-python $TARGET_ROOT /
+COPY --from=build-python-numpy $TARGET_ROOT /
+COPY --from=build-python-scipy $TARGET_ROOT /
