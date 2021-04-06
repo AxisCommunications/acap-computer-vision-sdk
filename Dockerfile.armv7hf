@@ -1,10 +1,27 @@
+#-- ACAP SDK configuration --#
+ARG ACAP_SDK_IMAGE=axisecp/acap4-api
+ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
+
+#-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+ARG ARCH_COMPILER="arm-linux-gnueabihf"
 ARG BUILD_ROOT=/build-root
-ARG NUMPY_VERSION=v1.19.5
-ARG PYTHON_VERSION=3.8.8
-ARG SCIPY_VERSION=v1.5.4
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
+
+#-- Versions of installed packages --#
+ARG NUMPY_VERSION=v1.19.5
+ARG OPENBLAS_VERSION=v0.3.14
+#ARG PYTHON_VERSION=3.8.8
+ARG PYTESSERACT_VERSION=0.3.7
+ARG SCIPY_VERSION=v1.5.4
+ARG TESSERACT_VERSION=4.1.1
+ARG TFSERVING_VERSION=2.0.0
+
+#-- Build parallelization  --#
+ARG OPENBLAS_BUILD_CORES=2
+ARG NUMPY_BUILD_CORES=2
+ARG SCIPY_BUILD_CORES=2
 
 
 # A base image with common tools for crosscompilation
@@ -12,6 +29,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS build-base
 
 # Setup environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ARG BUILD_ROOT
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
@@ -31,6 +49,9 @@ deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main
 # Get crosscompilation toolchain and related packages
 RUN dpkg --add-architecture armhf
 RUN apt-get update && apt-get install -yf --no-install-recommends \
+        autoconf \
+        automake \
+        autotools-dev \
         build-essential \
         ca-certificates \
         crossbuild-essential-armhf \
@@ -39,6 +60,8 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         gfortran-arm-linux-gnueabihf \
         git \
         gfortran \
+        libtool \
+        pkg-config \
         python3-dev \
         python3-pip \
         python3-venv \
@@ -51,13 +74,17 @@ RUN mkdir -p ${BUILD_ROOT}
 
 
 FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
+ARG ARCH_CFLAGS
 ARG BUILD_ROOT
+ARG TARGET_ROOT
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         curl \
         gfortran \
         git \
+        pkg-config \
     && update-ca-certificates
 
 RUN mkdir -p ${TARGET_ROOT}
@@ -66,11 +93,12 @@ RUN mkdir -p ${BUILD_ROOT}
 
 # Build OpenBLAS
 FROM build-base AS build-openblas
-ARG OPENBLAS_BUILD_CORES=2
 ARG BUILD_ROOT
+ARG OPENBLAS_BUILD_CORES
+ARG OPENBLAS_VERSION
 ARG TARGET_ROOT
 WORKDIR ${BUILD_ROOT}
-RUN git clone --branch v0.3.14 https://github.com/xianyi/OpenBLAS.git
+RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
 RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
@@ -80,12 +108,12 @@ FROM build-base-arm AS build-python
 ARG BUILD_ROOT
 ARG TARGET_ROOT
 RUN mkdir -p $BUILD_ROOT/python
-RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
         file libexpat1 libexpat1-dev libmagic-mgc libmagic1 libmpdec2 \
         libpython3-dev libpython3-stdlib libpython3.8 libpython3.8-dev \
         libpython3.8-minimal libpython3.8-stdlib mime-support python3 \
         python3-dev python3-distutils python3-lib2to3 python3-minimal \
-        python3.8 python3.8-dev python3.8-minimal zlib1g-dev
+        python3.8 python3.8-dev python3.8-minimal zlib1g-dev libssl1.1 libssl-dev	
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done 
 RUN mv $TARGET_ROOT/lib/arm-linux-gnueabihf/* $TARGET_ROOT/usr/lib/arm-linux-gnueabihf/ && rm -rf $TARGET_ROOT/lib
@@ -105,16 +133,16 @@ RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
 FROM build-base-arm AS build-python-numpy
 ARG ARCH_CFLAGS
 ARG BUILD_ROOT
-ARG NUMPY_BUILD_CORES=2
+ARG NUMPY_BUILD_CORES
 ARG NUMPY_VERSION
 ARG TARGET_ROOT
-ENV CFLAGS=$ARCH_CFLAGS
+ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
 COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 WORKDIR $BUILD_ROOT
-RUN git clone --branch ${NUMPY_VERSION} https://github.com/numpy/numpy
+RUN git clone --depth 1 --branch ${NUMPY_VERSION}  https://github.com/numpy/numpy
 WORKDIR $BUILD_ROOT/numpy
 ENV CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/python3.8 $ARCH_CFLAGS"
 RUN cp site.cfg.example site.cfg
@@ -140,15 +168,15 @@ RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/us
 FROM build-base-arm AS build-python-scipy
 ARG ARCH_CFLAGS
 ARG BUILD_ROOT
-ARG SCIPY_BUILD_CORES=2
+ARG SCIPY_BUILD_CORES
 ARG SCIPY_VERSION
 ARG TARGET_ROOT
 ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
-ENV CFLAGS=$ARCH_CFLAGS
+ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
 WORKDIR $BUILD_ROOT
-RUN git clone --branch ${SCIPY_VERSION} https://github.com/scipy/scipy.git
+RUN git clone --depth 1 --branch ${SCIPY_VERSION}  https://github.com/scipy/scipy.git
 WORKDIR $BUILD_ROOT/scipy
 COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
@@ -160,6 +188,98 @@ RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
 RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
 
 
+FROM ${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-sdk
+# libs: /axis/device-api/lib/
+# headers: /axis/device-api/include/
+
+
+FROM build-base as build-tfserving
+ARG BUILD_ROOT
+ARG TARGET_ROOT
+ARG TFSERVING_VERSION
+RUN apt-get install -y --no-install-recommends \
+    libprotobuf-dev \
+    python3-grpc-tools \
+    python3-grpcio
+
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git 
+RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git 
+COPY tfserving/install-tf.sh .
+RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
+WORKDIR $TARGET_ROOT/usr/lib/python3/site-packages
+COPY tfserving/tf_proto_utils.py .
+ARG TARGET_ROOT=/target-root
+RUN mkdir -p ${BUILD_ROOT}/python-grpc
+RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
+        python3-grpcio:armhf \
+        python3-protobuf:armhf
+
+WORKDIR $TARGET_ROOT
+RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
+RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
+RUN cp -r lib/* usr/lib/ && rm -rf lib
+WORKDIR $TARGET_ROOT/usr
+RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+
+
+FROM build-base AS build-tesseract
+ARG ARCH_CFLAGS
+ARG ARCH_COMPILER
+ARG TESSERACT_VERSION
+RUN mkdir -p $BUILD_ROOT/tesseract_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
+    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
+    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf libgomp1:armhf
+RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
+RUN apt-get install --reinstall -y -f \
+    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
+    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf
+
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
+WORKDIR ${BUILD_ROOT}/tesseract
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/arm-linux-gnueabihf:$LD_LIBRARY_PATH
+ENV PATH=$TARGET_ROOT/usr/bin:$PATH
+ENV CC=${ARCH_COMPILER}-gcc
+ENV CXX=${ARCH_COMPILER}-g++
+ENV CPP=${ARCH_COMPILER}-g++
+ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+RUN ./autogen.sh
+RUN ./configure --prefix=$TARGET_ROOT/usr --host=arm-linux-gnueabihf
+RUN make
+RUN make install
+RUN ldconfig
+
+
+FROM build-base-arm AS build-python-pytesseract
+ARG ARCH_CFLAGS
+ARG BUILD_ROOT
+ARG PILLOW_VERSION
+ARG PYTESSERACT_VERSION
+ARG TARGET_ROOT
+RUN mkdir -p $BUILD_ROOT/pillow_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
+RUN for f in $BUILD_ROOT/pillow_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN ls $TARGET_ROOT/usr/lib/arm-linux-gnueabihf
+RUN apt-get install -y zlib1g-dev libjpeg8-dev
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
+COPY --from=build-tesseract $TARGET_ROOT $BUILD_ROOT
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
+WORKDIR $TARGET_ROOT
+RUN mkdir -p usr/lib/python3.8/dist-packages/
+RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/ 
+RUN mkdir -p usr && mv bin usr
+RUN rm -rf Pillow*  pytesseract*
+COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
+
+
 FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS runtime
 ARG TARGET_ROOT
 ENV LD_LIBRARY_PATH=/usr/lib:/usr/lib/arm-linux-gnueabihf/
@@ -167,3 +287,5 @@ COPY --from=build-openblas $TARGET_ROOT /
 COPY --from=build-python $TARGET_ROOT /
 COPY --from=build-python-numpy $TARGET_ROOT /
 COPY --from=build-python-scipy $TARGET_ROOT /
+COPY --from=build-tfserving $TARGET_ROOT /
+COPY --from=build-python-pytesseract $TARGET_ROOT /
