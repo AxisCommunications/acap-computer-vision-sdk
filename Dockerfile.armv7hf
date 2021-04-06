@@ -4,7 +4,7 @@ ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
 
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
-ARG ARCH_COMPILER="arm-linux-gnueabihf"
+ARG TARGET_NAME=arm-linux-gnueabihf
 ARG BUILD_ROOT=/build-root
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
@@ -12,6 +12,7 @@ ARG UBUNTU_VERSION=20.04
 #-- Versions of installed packages --#
 ARG NUMPY_VERSION=v1.19.5
 ARG OPENBLAS_VERSION=v0.3.14
+ARG OPENCV_VERSION=4.5.1
 #ARG PYTHON_VERSION=3.8.8
 ARG PYTESSERACT_VERSION=0.3.7
 ARG SCIPY_VERSION=v1.5.4
@@ -162,6 +163,13 @@ RUN python3.8 setup.py config
 RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
 RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
 RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
+RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
+        libgfortran5
+
+WORKDIR $TARGET_ROOT
+RUN for f in ${BUILD_ROOT}/python-numpy-deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+
 
 
 # Build SciPy with OpenBLAS
@@ -226,7 +234,7 @@ RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not 
 
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
-ARG ARCH_COMPILER
+ARG TARGET_NAME
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
@@ -243,9 +251,9 @@ RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tessera
 WORKDIR ${BUILD_ROOT}/tesseract
 ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/arm-linux-gnueabihf:$LD_LIBRARY_PATH
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
-ENV CC=${ARCH_COMPILER}-gcc
-ENV CXX=${ARCH_COMPILER}-g++
-ENV CPP=${ARCH_COMPILER}-g++
+ENV CC=${TARGET_NAME}-gcc
+ENV CXX=${TARGET_NAME}-g++
+ENV CPP=${TARGET_NAME}-g++
 ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
@@ -265,12 +273,10 @@ ARG TARGET_ROOT
 RUN mkdir -p $BUILD_ROOT/pillow_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
 RUN for f in $BUILD_ROOT/pillow_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN ls $TARGET_ROOT/usr/lib/arm-linux-gnueabihf
 RUN apt-get install -y zlib1g-dev libjpeg8-dev
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
-COPY --from=build-tesseract $TARGET_ROOT $BUILD_ROOT
 RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
 WORKDIR $TARGET_ROOT
 RUN mkdir -p usr/lib/python3.8/dist-packages/
@@ -280,12 +286,23 @@ RUN rm -rf Pillow*  pytesseract*
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 
+FROM build-base AS build-opencv
+ARG OPENCV_VERSION
+ARG TARGET_NAME
+RUN apt-get install -y libglib2.0-dev libsystemd0 \
+        libglib2.0-dev:armhf libsystemd0:armhf
+ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
+COPY --from=acap-sdk /axis/device-api/include/vdo /usr/include/vdo
+COPY --from=acap-sdk /axis/device-api/lib/vdo /usr/lib/$TARGET_NAME
+
+
 FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS runtime
 ARG TARGET_ROOT
 ENV LD_LIBRARY_PATH=/usr/lib:/usr/lib/arm-linux-gnueabihf/
 COPY --from=build-openblas $TARGET_ROOT /
 COPY --from=build-python $TARGET_ROOT /
 COPY --from=build-python-numpy $TARGET_ROOT /
-COPY --from=build-python-scipy $TARGET_ROOT /
-COPY --from=build-tfserving $TARGET_ROOT /
+#COPY --from=build-python-scipy $TARGET_ROOT /
+#COPY --from=build-tfserving $TARGET_ROOT /
 COPY --from=build-python-pytesseract $TARGET_ROOT /
+#COPY --from=build-opencv $TARGET_ROOT /
