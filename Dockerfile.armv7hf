@@ -21,6 +21,7 @@ ARG TFSERVING_VERSION=2.0.0
 
 #-- Build parallelization  --#
 ARG OPENBLAS_BUILD_CORES=2
+ARG OPENCV_BUILD_CORES=2
 ARG NUMPY_BUILD_CORES=2
 ARG SCIPY_BUILD_CORES=2
 
@@ -289,44 +290,49 @@ COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 FROM build-base AS build-opencv
 ARG ARCH_CFLAGS
 ARG BUILD_ROOT
+ARG http_proxy
+ARG https_proxy
+ARG OPENCV_BUILD_CORES
 ARG OPENCV_VERSION
 ARG TARGET_NAME
 ARG TARGET_ROOT
-RUN apt-get install -y libglib2.0-dev libsystemd0 
 
-
+# Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:armhf libsystemd0:armhf
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystemd0:armhf
 
-
+# Get AXIS specific files for the build environment
+RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
 ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
-COPY --from=acap-sdk /axis/device-api/include/ /usr/include/
-COPY --from=acap-sdk /axis/device-api/lib/ /usr/lib/$TARGET_NAME/
 COPY opencv/capaxis/include/ /usr/include/vdo
 COPY opencv/capaxis/lib/ /usr/lib/$TARGET_NAME
-COPY opencv/capaxisvdo.pc /usr/lib/$ARCHDIR/pkgconfig
+COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
+COPY --from=acap-sdk /axis/device-api/include/vdo* /usr/include/vdo/
+COPY --from=acap-sdk /axis/device-api/lib/ /usr/lib/$TARGET_NAME/
 
-WORKDIR $BUILD_ROOT
-RUN curl -fsSL https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz | tar -xz
-WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}
-COPY opencv/axisvdo-4.5.1.patch .
-RUN patch -p 1 < axisvdo-${OPENCV_VERSION}.patch
-
-COPY opencv/cap_axis_vdo.cpp modules/videoio/src
-COPY opencv/detect_axis_vdo.cmake modules/videoio/cmake
-
+# Get AXIS specific files for the runtime
+COPY opencv/capaxis/lib/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/stubs/ $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /axis/device-api/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /axis/device-api/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
 
+# Download OpenCV
+WORKDIR $BUILD_ROOT
+RUN curl -fsSL https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz | tar -xz
+WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}
+COPY opencv/cap_axis_vdo.cpp modules/videoio/src
+COPY opencv/detect_axis_vdo.cmake modules/videoio/cmake
+COPY opencv/axisvdo-4.5.1.patch .
+RUN patch -p 1 < axisvdo-${OPENCV_VERSION}.patch
 
 # A fix for cmake not finding our blas/lapack headers when crosscompiling
-RUN sed -i 's/\s_find_header_file_in_dirs(OPENCV_CBLAS/set(OPENCV_CBLAS_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/cblas.h")\n#_find_header_file_in_dirs(OPENCV_CBLAS/g' cmake/OpenCVFindLAPACK.cmake
-RUN sed -i 's/\s_find_header_file_in_dirs(OPENCV_LAPACKE/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")\n#_find_header_file_in_dirs(OPENCV_LAPACKE/g' cmake/OpenCVFindLAPACK.cmake
-
-RUN cat  cmake/OpenCVFindLAPACK.cmake
-RUN find / | grep "crypt.h"
+RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/cblas.h")/g' cmake/OpenCVFindLAPACK.cmake
+RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
 
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
 RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake \
@@ -341,10 +347,8 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy/core/include \
           -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/dist-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
-          #-D CMAKE_C_FLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include -L$TARGET_ROOT/usr/lib" \
           -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
-          #-D CMAKE_CXX_FLAGS="$ARCH_CFLAGS  -I$TARGET_ROOT/usr/include -L$TARGET_ROOT/usr/lib" \
-          -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so.0 \
+          -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
           -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/usr/include \
           -D BLAS_LIBRARIES=$TARGET_ROOT/usr/lib/libopenblas.so \
           # ON:
@@ -395,7 +399,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           ..
 
 # Build openCV libraries and other tools
-RUN make -j all install
+RUN make -j ${OPENCV_BUILD_CORES} install
 
 # Make the header files available by creating a symlink to
 # the path specified in CMAKE params
@@ -404,20 +408,17 @@ RUN ln -sf opencv4/opencv2 opencv2
 
 WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
 RUN mv cv2.*.so cv2.so
-
-COPY opencv/capaxis/lib/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libvdo* $TARGET_ROOT/usr/lib/
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
+
 
 FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS runtime
 ARG TARGET_ROOT
 ENV LD_LIBRARY_PATH=/usr/lib:/usr/lib/arm-linux-gnueabihf/
 COPY --from=build-openblas $TARGET_ROOT /
+COPY --from=build-opencv $TARGET_ROOT /
 COPY --from=build-python $TARGET_ROOT /
 COPY --from=build-python-numpy $TARGET_ROOT /
-#COPY --from=build-python-scipy $TARGET_ROOT /
-#COPY --from=build-tfserving $TARGET_ROOT /
+COPY --from=build-python-scipy $TARGET_ROOT /
 COPY --from=build-python-pytesseract $TARGET_ROOT /
-COPY --from=build-opencv $TARGET_ROOT /
-
+COPY --from=build-tfserving $TARGET_ROOT /
+RUN apt-get update && apt-get install -y nano
