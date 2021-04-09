@@ -4,8 +4,9 @@ ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
 
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
-ARG TARGET_NAME=arm-linux-gnueabihf
 ARG BUILD_ROOT=/build-root
+ARG SDK_ROOT_DIR=/axis/
+ARG TARGET_NAME=arm-linux-gnueabihf
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
 
@@ -37,7 +38,9 @@ FROM ubuntu:${UBUNTU_VERSION} AS build-base
 
 # Setup environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ARG ARCH_CFLAGS
 ARG BUILD_ROOT
+ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
@@ -81,11 +84,15 @@ RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
 
+
 FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG ARCH_CFLAGS
 ARG BUILD_ROOT
-ARG TARGET_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGET_NAME
+ARG TARGET_ROOT
+ARG http_proxy
+ARG https_proxy
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
@@ -101,10 +108,9 @@ RUN mkdir -p ${BUILD_ROOT}
 
 # Build OpenBLAS
 FROM build-base AS build-openblas
-ARG BUILD_ROOT
 ARG OPENBLAS_BUILD_CORES
 ARG OPENBLAS_VERSION
-ARG TARGET_ROOT
+RUN env
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
@@ -113,8 +119,8 @@ RUN make install PREFIX=$TARGET_ROOT/usr
 
 
 FROM build-base-arm AS build-python
-ARG BUILD_ROOT
-ARG TARGET_ROOT
+# As we're not building python ourselves at this moment, PYTHON_VERSION has no effect
+#ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
         file libexpat1 libexpat1-dev libmagic-mgc libmagic1 libmpdec2 \
@@ -139,11 +145,8 @@ RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
 # Building numpy with OpenBLAS as BLAS/Lapack vs built-in BLAS/Lapack
 # shows between 50% to 99% lower proc times depending on the linalg op used
 FROM build-base-arm AS build-python-numpy
-ARG ARCH_CFLAGS
-ARG BUILD_ROOT
 ARG NUMPY_BUILD_CORES
 ARG NUMPY_VERSION
-ARG TARGET_ROOT
 ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
@@ -180,11 +183,8 @@ RUN for f in ${BUILD_ROOT}/python-numpy-deps/archives/*.deb; do dpkg -x $f $TARG
 
 # Build SciPy with OpenBLAS
 FROM build-base-arm AS build-python-scipy
-ARG ARCH_CFLAGS
-ARG BUILD_ROOT
 ARG SCIPY_BUILD_CORES
 ARG SCIPY_VERSION
-ARG TARGET_ROOT
 ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
 ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -202,9 +202,7 @@ RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
 RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
 
 
-FROM build-base as build-tfserving
-ARG BUILD_ROOT
-ARG TARGET_ROOT
+FROM build-base as build-python-tfserving
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
     libprotobuf-dev \
@@ -266,11 +264,7 @@ RUN ldconfig
 
 
 FROM build-base-arm AS build-python-pytesseract
-ARG ARCH_CFLAGS
-ARG BUILD_ROOT
-ARG PILLOW_VERSION
 ARG PYTESSERACT_VERSION
-ARG TARGET_ROOT
 RUN mkdir -p $BUILD_ROOT/pillow_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
 RUN for f in $BUILD_ROOT/pillow_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
@@ -288,14 +282,8 @@ COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 
 FROM build-base AS build-opencv
-ARG ARCH_CFLAGS
-ARG BUILD_ROOT
-ARG http_proxy
-ARG https_proxy
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_VERSION
-ARG TARGET_NAME
-ARG TARGET_ROOT
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
@@ -411,14 +399,26 @@ RUN mv cv2.*.so cv2.so
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
 
-FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS runtime
+FROM ubuntu:${UBUNTU_VERSION} AS sdk
+ARG SDK_ROOT_DIR
 ARG TARGET_ROOT
+RUN mkdir -p $SDK_ROOT_DIR
+COPY --from=build-openblas $TARGET_ROOT $SDK_ROOT_DIR/openblas
+COPY --from=build-opencv $TARGET_ROOT $SDK_ROOT_DIR/opencv
+COPY --from=build-python $TARGET_ROOT $SDK_ROOT_DIR/python
+COPY --from=build-python-numpy $TARGET_ROOT $SDK_ROOT_DIR/python-numpy
+COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytesseract
+COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
+COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
+COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
+
+
+FROM arm32v7/ubuntu:${UBUNTU_VERSION} AS example-runtime
+ARG SDK_ROOT_DIR
 ENV LD_LIBRARY_PATH=/usr/lib:/usr/lib/arm-linux-gnueabihf/
-COPY --from=build-openblas $TARGET_ROOT /
-COPY --from=build-opencv $TARGET_ROOT /
-COPY --from=build-python $TARGET_ROOT /
-COPY --from=build-python-numpy $TARGET_ROOT /
-COPY --from=build-python-scipy $TARGET_ROOT /
-COPY --from=build-python-pytesseract $TARGET_ROOT /
-COPY --from=build-tfserving $TARGET_ROOT /
+COPY --from=sdk $SDK_ROOT_DIR/openblas/ /
+COPY --from=sdk $SDK_ROOT_DIR/opencv/ /
+COPY --from=sdk $SDK_ROOT_DIR/python/ /
+COPY --from=sdk $SDK_ROOT_DIR/python-numpy/ /
 RUN apt-get update && apt-get install -y nano
+CMD ["bash"]
