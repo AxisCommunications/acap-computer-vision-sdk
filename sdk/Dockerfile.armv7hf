@@ -46,6 +46,14 @@ ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
 
+# To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
+ENV ARCH_CFLAGS=$ARCH_CFLAGS
+ENV BUILD_ROOT=$BUILD_ROOT
+ENV TARGET_NAME=$TARGET_NAME
+ENV TARGET_ROOT=$TARGET_ROOT
+ENV http_proxy=$http_proxy
+ENV https_proxy=$https_proxy
+
 # Add source for target arch
 RUN echo \
 "deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse\n\
@@ -94,6 +102,14 @@ ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
+
+# To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
+ENV ARCH_CFLAGS=$ARCH_CFLAGS
+ENV BUILD_ROOT=$BUILD_ROOT
+ENV TARGET_NAME=$TARGET_NAME
+ENV TARGET_ROOT=$TARGET_ROOT
+ENV http_proxy=$http_proxy
+ENV https_proxy=$https_proxy
 
 # qemu is used to emulate arm32v7
 COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
