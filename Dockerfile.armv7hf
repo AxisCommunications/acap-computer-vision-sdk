@@ -5,6 +5,7 @@ ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
 ARG BUILD_ROOT=/build-root
+ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
 ARG SDK_ROOT_DIR=/axis/
 ARG TARGET_NAME=arm-linux-gnueabihf
 ARG TARGET_ROOT=/target-root
@@ -283,6 +284,7 @@ COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 FROM build-base AS build-opencv
 ARG OPENCV_BUILD_CORES
+ARG OPENCV_MODULES
 ARG OPENCV_VERSION
 
 # Get required packages for both build env and target env
@@ -363,7 +365,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D WITH_FFMPEG=OFF \
           -D WITH_GSTREAMER=OFF \
           -D WITH_GSTREAMER_0_10=OFF \
-          -D BUILD_LIST=core,imgproc,imgcodecs,videoio,objdetect,python3,video \
+          -D BUILD_LIST=$OPENCV_MODULES \
           -D BUILD_EXAMPLES=OFF \
           -D BUILD_OPENCV_DNN=OFF \
           -D BUILD_OPENCV_APPS=OFF \
