@@ -1,0 +1,415 @@
+#-- ACAP SDK configuration --#
+ARG ACAP_SDK_IMAGE=axisecp/acap4-api
+ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
+
+#-- Build configuration --#
+ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+ARG BUILD_ROOT=/build-root
+ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
+ARG SDK_ROOT_DIR=/axis/
+ARG TARGET_NAME=arm-linux-gnueabihf
+ARG TARGET_ROOT=/target-root
+ARG UBUNTU_VERSION=20.04
+
+#-- Versions of installed packages --#
+ARG NUMPY_VERSION=v1.19.5
+ARG OPENBLAS_VERSION=v0.3.14
+ARG OPENCV_VERSION=4.5.1
+#ARG PYTHON_VERSION=3.8.8
+ARG PYTESSERACT_VERSION=0.3.7
+ARG SCIPY_VERSION=v1.5.4
+ARG TESSERACT_VERSION=4.1.1
+ARG TFSERVING_VERSION=2.0.0
+
+#-- Build parallelization  --#
+ARG OPENBLAS_BUILD_CORES=2
+ARG OPENCV_BUILD_CORES=2
+ARG NUMPY_BUILD_CORES=2
+ARG SCIPY_BUILD_CORES=2
+
+
+# The ACAP Native SDK is used to get certain libs and headers
+FROM ${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-sdk
+# libs: /axis/device-api/lib/
+# headers: /axis/device-api/include/
+
+
+# A base image with common tools for crosscompilation
+FROM ubuntu:${UBUNTU_VERSION} AS build-base
+
+# Setup environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ARG ARCH_CFLAGS
+ARG BUILD_ROOT
+ARG TARGET_NAME
+ARG TARGET_ROOT
+ARG http_proxy
+ARG https_proxy
+
+# Add source for target arch
+RUN echo \
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu focal-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse"\
+ > /etc/apt/sources.list
+
+# Get crosscompilation toolchain and related packages
+RUN dpkg --add-architecture armhf
+RUN apt-get update && apt-get install -yf --no-install-recommends \
+        autoconf \
+        automake \
+        autotools-dev \
+        build-essential \
+        ca-certificates \
+        crossbuild-essential-armhf \
+        cmake \
+        curl \
+        gfortran-arm-linux-gnueabihf \
+        git \
+        gfortran \
+        libtool \
+        pkg-config \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        wget \
+ && update-ca-certificates \
+ && apt-get clean
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+
+
+FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
+ARG ARCH_CFLAGS
+ARG BUILD_ROOT
+ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGET_NAME
+ARG TARGET_ROOT
+ARG http_proxy
+ARG https_proxy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        gfortran \
+        git \
+        pkg-config \
+    && update-ca-certificates
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+
+# Build OpenBLAS
+FROM build-base AS build-openblas
+ARG OPENBLAS_BUILD_CORES
+ARG OPENBLAS_VERSION
+RUN env
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
+WORKDIR ${BUILD_ROOT}/OpenBLAS
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
+RUN make install PREFIX=$TARGET_ROOT/usr
+
+
+FROM build-base-arm AS build-python
+# As we're not building python ourselves at this moment, PYTHON_VERSION has no effect
+#ARG PYTHON_VERSION
+RUN mkdir -p $BUILD_ROOT/python
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
+        file libexpat1 libexpat1-dev libmagic-mgc libmagic1 libmpdec2 \
+        libpython3-dev libpython3-stdlib libpython3.8 libpython3.8-dev \
+        libpython3.8-minimal libpython3.8-stdlib mime-support python3 \
+        python3-dev python3-distutils python3-lib2to3 python3-minimal \
+        python3.8 python3.8-dev python3.8-minimal zlib1g-dev libssl1.1 libssl-dev	
+WORKDIR $TARGET_ROOT
+RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done 
+RUN mv $TARGET_ROOT/lib/arm-linux-gnueabihf/* $TARGET_ROOT/usr/lib/arm-linux-gnueabihf/ && rm -rf $TARGET_ROOT/lib
+WORKDIR ${BUILD_ROOT}/pip
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
+
+
+# Build NumPy with OpenBLAS
+# This build is done emulated right now until more work
+# has been put in researching how to crosscompile
+# python packages
+# Building numpy like this vs apt-get shows ~5% lower proc times
+# in basic math ops
+# Building numpy with OpenBLAS as BLAS/Lapack vs built-in BLAS/Lapack
+# shows between 50% to 99% lower proc times depending on the linalg op used
+FROM build-base-arm AS build-python-numpy
+ARG NUMPY_BUILD_CORES
+ARG NUMPY_VERSION
+ENV CFLAGS="$ARCH_CFLAGS"
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
+COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+WORKDIR $BUILD_ROOT
+RUN git clone --depth 1 --branch ${NUMPY_VERSION}  https://github.com/numpy/numpy
+WORKDIR $BUILD_ROOT/numpy
+ENV CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/python3.8 $ARCH_CFLAGS"
+RUN cp site.cfg.example site.cfg
+RUN echo "[openblas]\n" \
+         "libraries = openblas\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         "include_dirs = ${BUILD_ROOT}/usr/include\n" \
+         "[default]\n" \
+         "include_dirs = ${BUILD_ROOT}/usr/include\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         "[lapack]\n" \
+         "lapack_libs = openblas\n" \
+         "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
+         >> site.cfg
+RUN python3.8 -m pip install cython
+RUN python3.8 setup.py config 
+RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
+RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
+RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
+RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
+        libgfortran5
+
+WORKDIR $TARGET_ROOT
+RUN for f in ${BUILD_ROOT}/python-numpy-deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+
+
+# Build SciPy with OpenBLAS
+FROM build-base-arm AS build-python-scipy
+ARG SCIPY_BUILD_CORES
+ARG SCIPY_VERSION
+ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
+ENV CFLAGS="$ARCH_CFLAGS"
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
+WORKDIR $BUILD_ROOT
+RUN git clone --depth 1 --branch ${SCIPY_VERSION}  https://github.com/scipy/scipy.git
+WORKDIR $BUILD_ROOT/scipy
+COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
+ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
+ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
+RUN python3.8 -m pip install cython tempita
+RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
+RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
+
+
+FROM build-base as build-python-tfserving
+ARG TFSERVING_VERSION
+RUN apt-get install -y --no-install-recommends \
+    libprotobuf-dev \
+    python3-grpc-tools \
+    python3-grpcio
+
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git 
+RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git 
+COPY tfserving/install-tf.sh .
+RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
+WORKDIR $TARGET_ROOT/usr/lib/python3/site-packages
+COPY tfserving/tf_proto_utils.py .
+ARG TARGET_ROOT=/target-root
+RUN mkdir -p ${BUILD_ROOT}/python-grpc
+RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
+        python3-grpcio:armhf \
+        python3-protobuf:armhf
+
+WORKDIR $TARGET_ROOT
+RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
+RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
+RUN cp -r lib/* usr/lib/ && rm -rf lib
+WORKDIR $TARGET_ROOT/usr
+RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+
+
+FROM build-base AS build-tesseract
+ARG ARCH_CFLAGS
+ARG TARGET_NAME
+ARG TESSERACT_VERSION
+RUN mkdir -p $BUILD_ROOT/tesseract_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
+    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
+    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf libgomp1:armhf
+RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
+RUN apt-get install --reinstall -y -f \
+    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
+    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf
+
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
+WORKDIR ${BUILD_ROOT}/tesseract
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/arm-linux-gnueabihf:$LD_LIBRARY_PATH
+ENV PATH=$TARGET_ROOT/usr/bin:$PATH
+ENV CC=${TARGET_NAME}-gcc
+ENV CXX=${TARGET_NAME}-g++
+ENV CPP=${TARGET_NAME}-g++
+ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+RUN ./autogen.sh
+RUN ./configure --prefix=$TARGET_ROOT/usr --host=arm-linux-gnueabihf
+RUN make
+RUN make install
+RUN ldconfig
+
+
+FROM build-base-arm AS build-python-pytesseract
+ARG PYTESSERACT_VERSION
+RUN mkdir -p $BUILD_ROOT/pillow_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
+RUN for f in $BUILD_ROOT/pillow_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN apt-get install -y zlib1g-dev libjpeg8-dev
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
+WORKDIR $TARGET_ROOT
+RUN mkdir -p usr/lib/python3.8/dist-packages/
+RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/ 
+RUN mkdir -p usr && mv bin usr
+RUN rm -rf Pillow*  pytesseract*
+COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
+
+
+FROM build-base AS build-opencv
+ARG OPENCV_BUILD_CORES
+ARG OPENCV_MODULES
+ARG OPENCV_VERSION
+
+# Get required packages for both build env and target env
+RUN mkdir -p $BUILD_ROOT/opencv_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:armhf libsystemd0:armhf
+RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystemd0:armhf
+
+# Get AXIS specific files for the build environment
+RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
+ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
+COPY opencv/capaxis/include/ /usr/include/vdo
+COPY opencv/capaxis/lib/ /usr/lib/$TARGET_NAME
+COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
+COPY --from=acap-sdk /axis/device-api/include/vdo* /usr/include/vdo/
+COPY --from=acap-sdk /axis/device-api/lib/ /usr/lib/$TARGET_NAME/
+
+# Get AXIS specific files for the runtime
+COPY opencv/capaxis/lib/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/stubs/ $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /axis/device-api/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /axis/device-api/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
+COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
+
+# Download OpenCV
+WORKDIR $BUILD_ROOT
+RUN curl -fsSL https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz | tar -xz
+WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}
+COPY opencv/cap_axis_vdo.cpp modules/videoio/src
+COPY opencv/detect_axis_vdo.cmake modules/videoio/cmake
+COPY opencv/axisvdo-4.5.1.patch .
+RUN patch -p 1 < axisvdo-${OPENCV_VERSION}.patch
+
+# A fix for cmake not finding our blas/lapack headers when crosscompiling
+RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/cblas.h")/g' cmake/OpenCVFindLAPACK.cmake
+RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
+
+WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
+RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake \
+          -D CMAKE_BUILD_TYPE=RELEASE \
+           # This path will contain all opencv header files
+          -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
+          -D INSTALL_C_EXAMPLES=OFF \
+          -D PYTHON3_EXECUTABLE=/usr/bin/python3.8 \
+          -D PYTHON3_INCLUDE_PATH=/usr/include/python3.8 \
+          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/arm-linux-gnueabihf/libpython3.8.so \
+          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/arm-linux-gnueabihf/libpython3.8.so \
+          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy/core/include \
+          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/dist-packages \
+          -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
+          -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
+          -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
+          -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/usr/include \
+          -D BLAS_LIBRARIES=$TARGET_ROOT/usr/lib/libopenblas.so \
+          # ON:
+          -D WITH_TBB=ON \
+          -D WITH_OPENGL=ON \
+          -D BUILD_JPEG=ON \
+          -D ENABLE_NEON=ON \
+          -D CPU_BASELINE=NEON,VFPV3 \
+          -D ENABLE_VFPV3=ON \
+          -D WITH_AXIS_VDO=ON \
+          -D CMAKE_SKIP_RPATH=ON \
+          -D OPENCV_SKIP_PYTHON_LOADER=ON \
+          -D OPENCV_GENERATE_PKGCONFIG=ON \
+          # ON end.
+          -D WITH_OPENEXR=OFF \
+          -D WITH_IPP=OFF \
+          -D WITH_WEBP=OFF                  \
+          -D ENABLE_PRECOMPILED_HEADERS=OFF \
+          -D WITH_1394=OFF \
+          -D WITH_LIBV4L=OFF \
+          -D WITH_V4L=OFF \
+          -D WITH_QT=OFF \
+          -D WITH_GTK=OFF \
+          -D WITH_FFMPEG=OFF \
+          -D WITH_GSTREAMER=OFF \
+          -D WITH_GSTREAMER_0_10=OFF \
+          -D BUILD_LIST=$OPENCV_MODULES \
+          -D BUILD_EXAMPLES=OFF \
+          -D BUILD_OPENCV_DNN=OFF \
+          -D BUILD_OPENCV_APPS=OFF \
+          -D BUILD_DOCS=OFF \
+          -D BUILD_opencv_python=OFF \
+          -D BUILD_PNG=OFF \
+          -D BUILD_IPP_IWD=OFF \
+          -D BUILD_QUIRC=OFF \
+          -D BUILD_OPENEXR=OFF \
+          -D WITH_JASPER=OFF \
+          -D BUILD_TIFF=OFF \
+          -D BUILD_PERF_TESTS=OFF \
+          -D HAVE_IPP_ICV=OFF \
+          -D BUILD_IPP=OFF \
+          -D BUILD_ZLIB=OFF \
+          -D BUILD_TESTS=OFF \
+          -D BUILD_IPP_ICV=OFF \
+          -D BUILD_PROTOBUF=OFF \
+          -D WITH_CUDA=OFF \
+          -D HAVE_WEBP=OFF \
+          ..
+
+# Build openCV libraries and other tools
+RUN make -j ${OPENCV_BUILD_CORES} install
+
+# Make the header files available by creating a symlink to
+# the path specified in CMAKE params
+WORKDIR $TARGET_ROOT/usr/include
+RUN ln -sf opencv4/opencv2 opencv2
+
+WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
+RUN mv cv2.*.so cv2.so
+RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
+
+
+FROM ubuntu:${UBUNTU_VERSION} AS sdk
+ARG SDK_ROOT_DIR
+ARG TARGET_ROOT
+RUN mkdir -p $SDK_ROOT_DIR
+COPY --from=build-openblas $TARGET_ROOT $SDK_ROOT_DIR/openblas
+COPY --from=build-opencv $TARGET_ROOT $SDK_ROOT_DIR/opencv
+COPY --from=build-python $TARGET_ROOT $SDK_ROOT_DIR/python
+COPY --from=build-python-numpy $TARGET_ROOT $SDK_ROOT_DIR/python-numpy
+COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytesseract
+COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
+COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
+COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
