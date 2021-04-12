@@ -94,6 +94,10 @@ ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
+
+# qemu is used to emulate arm32v7
+COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
