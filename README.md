@@ -9,7 +9,7 @@ OpenCV, Python, NumPy (OpenCV-Python dependency) and OpenBLAS (optimized math fu
 
 
 Thus, the Dockerfile for your application could be set up as:
-````sh
+```sh
 FROM axisecp/acap-computer-vision-sdk:latest-armv7hf-ubuntu20.04 AS cv-sdk
 FROM arm32v7/ubuntu:20.04
 
