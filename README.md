@@ -1,9 +1,9 @@
 # acap-computer-vision-sdk
 This repository holds the Dockerfiles that create the ACAP Computer Vision SDK images. These images bundles computer vision libraries and packages that are compiled for the AXIS camera platforms.
-The Dockerfiles can be used as a reference on how the image is configured, or to rebuild select components with parameters that better fit your application.
+The Dockerfiles can be used as a reference on how the SDK images are configured, or to rebuild select components with parameters that better fit your application.
 
 ## Contents
-* [OpenCV 4.5.1](https://github.com/opencv/opencv) with VDO
+* [OpenCV 4.5.1](https://github.com/opencv/opencv) with [VDO](https://www.axis.com/products/online-manual/s00004#t10157890)
   * A computer vision library with functionality that covers many different fields within computer vision. 
 The VDO integration allows accessing the camera's video streams through the OpenCV VideoCapture class. Compiled with OpenBLAS.
 * Python
