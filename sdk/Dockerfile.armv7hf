@@ -1,6 +1,6 @@
 #-- ACAP SDK configuration --#
 ARG ACAP_SDK_IMAGE=axisecp/acap4-api
-ARG ACAP_SDK_TAG=4.0-pre3-armv7hf-ubuntu20.04
+ARG ACAP_SDK_TAG=4.0pre5-armv7hf-ubuntu20.04
 
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
@@ -131,7 +131,6 @@ RUN mkdir -p ${BUILD_ROOT}
 FROM build-base AS build-openblas
 ARG OPENBLAS_BUILD_CORES
 ARG OPENBLAS_VERSION
-RUN env
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
