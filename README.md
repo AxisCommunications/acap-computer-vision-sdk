@@ -2,6 +2,13 @@
 This repository holds the Dockerfiles that create the ACAP Computer Vision SDK images. These images bundles computer vision libraries and packages that are compiled for the AXIS camera platforms.
 The Dockerfiles can be used as a reference on how the SDK images are configured, or to rebuild select components with parameters that better fit your application.
 
+The Computer Vision SDK image packages are located under this `/axis` directory. The directory of a package, e.g., `/axis/opencv`, contain
+the files needed for the applications as seen from the root of the application container. Thus, merging e.g., `/axis/opencv` with the root `/` of your
+container will add the package correctly. This is what is done with the `COPY` commands in the example Dockerfile below.
+
+Dependencies between packages currently need to be handled manually. That is, e.g., `python-numpy` does not include `python`. Rather, both
+packages will have to be added to the application container to use the NumPy package.
+
 ## Instructions
 1. Select a base image suitable for your camera platform, e.g., `arm32v7/ubuntu:20.04` for running Ubuntu 20.04 natively on the ARTPEC-7 platform.
 2. Copy the packages needed for your application from the CV SDK, e.g., for an application running OpenCV in Python, the copied packages would include
