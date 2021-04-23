@@ -8,7 +8,7 @@
 
 if [[ $DOCKER_TAG == *devel ]]
   then
-    TARGET="sdk-development";
+    TARGET="sdk-devel";
   else
     TARGET="sdk-runtime"; 
 fi
