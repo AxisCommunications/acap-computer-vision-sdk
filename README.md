@@ -13,7 +13,7 @@ The SDK comes in two different flavours: `runtime` and `devel`. The `devel`-tagg
 building and linking against the packages. The `runtime`-tagged image attempts to only retain the subset of files needed to run packages, which
 produces a significantly smaller image. The available tags are `latest-<ARCHITECTURE>`, `latest-<ARCHITECTURE>-<runtime/devel>`, `<VERSION_TAG>-<ARCHITECTURE>` and 
 `<VERSION_TAG>-<ARCHITECTURE>-<runtime/devel>`. The images that do not specify `runtime` or `devel` are set to be the smaller `runtime` images. The `latest`-tagged images
-are built from the master branch, while the `<VERSION_TAG>`-tagged images are built per release.
+are built per commit from the master branch, while the `<VERSION_TAG>`-tagged images are built per [tagged release](https://github.com/AxisCommunications/acap-computer-vision-sdk/tags).
 
 ## Instructions
 1. Select a base image suitable for your camera platform, e.g., `arm32v7/ubuntu:20.04` for running Ubuntu 20.04 natively on the ARTPEC-7 platform.
