@@ -9,6 +9,12 @@ container will add the package correctly. This is what is done with the `COPY` c
 Dependencies between packages currently need to be handled manually. That is, e.g., `python-numpy` does not include `python`. Rather, both
 packages will have to be added to the application container to use the NumPy package.
 
+The SDK comes in two different flavours: `runtime` and `devel`. The `devel`-tagged image contains the SDK build environment and the full packages, including e.g., headers, to allow
+building and linking against the packages. The `runtime`-tagged image attempts to only retain the subset of files needed to run packages, which
+produces a significantly smaller image. The available tags are `latest-<ARCHITECTURE>`, `latest-<ARCHITECTURE>-<runtime/devel>`, `<VERSION_TAG>-<ARCHITECTURE>` and 
+`<VERSION_TAG>-<ARCHITECTURE>-<runtime/devel>`. The images that do not specify `runtime` or `devel` are set to be the smaller `runtime` images. The `latest`-tagged images
+are built per commit from the master branch, while the `<VERSION_TAG>`-tagged images are built per [tagged release](https://github.com/AxisCommunications/acap-computer-vision-sdk/tags).
+
 ## Instructions
 1. Select a base image suitable for your camera platform, e.g., `arm32v7/ubuntu:20.04` for running Ubuntu 20.04 natively on the ARTPEC-7 platform.
 2. Copy the packages needed for your application from the CV SDK, e.g., for an application running OpenCV in Python, the copied packages would include
@@ -17,7 +23,7 @@ OpenCV, Python, NumPy (OpenCV-Python dependency) and OpenBLAS (optimized math fu
 
 Thus, the Dockerfile for your application could be set up as:
 ```sh
-FROM axisecp/acap-computer-vision-sdk:latest-armv7hf-ubuntu20.04 AS cv-sdk
+FROM axisecp/acap-computer-vision-sdk:latest-armv7hf AS cv-sdk
 FROM arm32v7/ubuntu:20.04
 
 # Add the CV packages

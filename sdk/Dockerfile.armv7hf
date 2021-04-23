@@ -1,4 +1,3 @@
-#-- ACAP SDK configuration --#
 ARG ACAP_SDK_IMAGE=axisecp/acap4-api
 ARG ACAP_SDK_TAG=4.0pre5-armv7hf-ubuntu20.04
 
@@ -25,7 +24,7 @@ ARG TFSERVING_VERSION=2.0.0
 ARG OPENBLAS_BUILD_CORES=2
 ARG OPENCV_BUILD_CORES=2
 ARG NUMPY_BUILD_CORES=2
-ARG SCIPY_BUILD_CORES=2
+ARG SCIPY_BUILD_CORES=4
 
 
 # The ACAP Native SDK is used to get certain libs and headers
@@ -193,6 +192,7 @@ RUN python3.8 setup.py config
 RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
 RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
 RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
+RUN rm -rf $TARGET_ROOT/usr/lib/python3.8/site-packages
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
@@ -220,7 +220,8 @@ ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3.8 -m pip install cython tempita
 RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
 RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
-
+RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/scipy*/scipy $TARGET_ROOT/usr/lib/python3.8/dist-packages/scipy
+RUN rm -rf $TARGET_ROOT/usr/lib/python3.8/site-packages
 
 FROM build-base as build-python-tfserving
 ARG TFSERVING_VERSION
@@ -420,7 +421,7 @@ RUN mv cv2.*.so cv2.so
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
 
-FROM ubuntu:${UBUNTU_VERSION} AS sdk
+FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
 ARG TARGET_ROOT
 RUN mkdir -p $SDK_ROOT_DIR
@@ -432,3 +433,33 @@ COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytessera
 COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
+
+
+FROM build-base AS sdk-devel-prune
+ARG SDK_ROOT_DIR
+COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
+
+# General pruning 
+WORKDIR $SDK_ROOT_DIR
+RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
+RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
+
+
+FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime-prune
+ARG SDK_ROOT_DIR
+COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
+WORKDIR $SDK_ROOT_DIR
+
+# Prune runtime unrelated files
+RUN find */usr/* -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+RUN find * -type f -name "*.a" -exec rm -f {} \;
+
+
+FROM build-base AS sdk-devel
+ARG SDK_ROOT_DIR
+COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
+
+
+FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
+ARG SDK_ROOT_DIR
+COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
