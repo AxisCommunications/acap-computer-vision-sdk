@@ -2,11 +2,13 @@ ARG ACAP_SDK_IMAGE=axisecp/acap4-api
 ARG ACAP_SDK_TAG=4.0pre5-armv7hf-ubuntu20.04
 
 #-- Build configuration --#
-ARG ARCH_CFLAGS="-O2"
+# Todo: add correct compiler flags, maybe  -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits
+# further reading: https://developer.arm.com/documentation/dui0774/i/Compiler-Command-line-Options/-mcpu
+ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto" # -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits"
 ARG BUILD_ROOT=/build-root
 ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
 ARG SDK_ROOT_DIR=/axis/
-ARG TARGET_NAME=arm-linux-gnueabihf
+ARG TARGET_NAME=aarch64-linux-gnu
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
 
@@ -132,7 +134,7 @@ ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
-RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA53 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
@@ -346,7 +348,7 @@ RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_O
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
 
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
-RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake \
+RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake \
           -D CMAKE_BUILD_TYPE=RELEASE \
            # This path will contain all opencv header files
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
@@ -367,8 +369,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D WITH_OPENGL=ON \
           -D BUILD_JPEG=ON \
           -D ENABLE_NEON=ON \
-          -D CPU_BASELINE=NEON,VFPV3 \
-          -D ENABLE_VFPV3=ON \
+          -D CPU_BASELINE=NEON \
           -D WITH_AXIS_VDO=ON \
           -D CMAKE_SKIP_RPATH=ON \
           -D OPENCV_SKIP_PYTHON_LOADER=ON \

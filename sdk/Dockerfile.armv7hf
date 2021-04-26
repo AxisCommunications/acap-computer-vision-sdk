@@ -76,7 +76,7 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-armhf \
         cmake \
         curl \
-        gfortran-arm-linux-gnueabihf \
+        gfortran-$TARGET_NAME \
         git \
         gfortran \
         libtool \
@@ -133,7 +133,7 @@ ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
-RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=arm-linux-gnueabihf-gcc FC=arm-linux-gnueabihf-gfortran HOSTCC=gcc
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
@@ -149,7 +149,7 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
         python3.8 python3.8-dev python3.8-minimal zlib1g-dev libssl1.1 libssl-dev	
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done 
-RUN mv $TARGET_ROOT/lib/arm-linux-gnueabihf/* $TARGET_ROOT/usr/lib/arm-linux-gnueabihf/ && rm -rf $TARGET_ROOT/lib
+RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && rm -rf $TARGET_ROOT/lib
 WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
@@ -271,7 +271,7 @@ RUN apt-get install --reinstall -y -f \
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
 WORKDIR ${BUILD_ROOT}/tesseract
-ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/arm-linux-gnueabihf:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/$TARGET_NAME:$LD_LIBRARY_PATH
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
 ENV CC=${TARGET_NAME}-gcc
 ENV CXX=${TARGET_NAME}-g++
@@ -280,7 +280,7 @@ ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 RUN ./autogen.sh
-RUN ./configure --prefix=$TARGET_ROOT/usr --host=arm-linux-gnueabihf
+RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_NAME
 RUN make
 RUN make install
 RUN ldconfig
@@ -354,8 +354,8 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D INSTALL_C_EXAMPLES=OFF \
           -D PYTHON3_EXECUTABLE=/usr/bin/python3.8 \
           -D PYTHON3_INCLUDE_PATH=/usr/include/python3.8 \
-          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/arm-linux-gnueabihf/libpython3.8.so \
-          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/arm-linux-gnueabihf/libpython3.8.so \
+          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
+          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy/core/include \
           -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/dist-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
