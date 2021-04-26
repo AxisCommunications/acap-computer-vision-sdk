@@ -220,8 +220,10 @@ ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3.8 -m pip install cython tempita
 RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
 RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
+RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
 RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/scipy*/scipy $TARGET_ROOT/usr/lib/python3.8/dist-packages/scipy
 RUN rm -rf $TARGET_ROOT/usr/lib/python3.8/site-packages
+
 
 FROM build-base as build-python-tfserving
 ARG TFSERVING_VERSION
