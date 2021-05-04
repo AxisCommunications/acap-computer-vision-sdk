@@ -1,5 +1,5 @@
-ARG ACAP_SDK_IMAGE=axisecp/acap4-api
-ARG ACAP_SDK_TAG=4.0pre5-armv7hf-ubuntu20.04
+ARG ACAP_SDK_IMAGE=axisecp/acap-api
+ARG ACAP_SDK_TAG=3.3-aarch64-ubuntu20.04
 
 #-- Build configuration --#
 # Todo: add correct compiler flags, maybe  -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits
@@ -316,20 +316,22 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:arm64 libsystemd0:arm64
 
+RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
+
 # Get AXIS specific files for the build environment
 RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
 ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
-COPY opencv/capaxis/include/ /usr/include/vdo
-COPY opencv/capaxis/lib/ /usr/lib/$TARGET_NAME
+COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
+COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
-COPY --from=acap-sdk /axis/device-api/include/vdo* /usr/include/vdo/
-COPY --from=acap-sdk /axis/device-api/lib/ /usr/lib/$TARGET_NAME/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/aarch64/usr/lib /usr/lib/$TARGET_NAME/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/aarch64/usr/include/vdo* /usr/include/vdo/
 
 # Get AXIS specific files for the runtime
-COPY opencv/capaxis/lib/ $TARGET_ROOT/usr/lib/
-COPY opencv/capaxis/stubs/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/aarch64/usr/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/aarch64/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT

@@ -1,5 +1,5 @@
-ARG ACAP_SDK_IMAGE=axisecp/acap4-api
-ARG ACAP_SDK_TAG=4.0pre5-armv7hf-ubuntu20.04
+ARG ACAP_SDK_IMAGE=axisecp/acap-api
+ARG ACAP_SDK_TAG=3.3-aarch64-ubuntu20.04
 
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
@@ -318,17 +318,17 @@ RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystem
 # Get AXIS specific files for the build environment
 RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
 ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
-COPY opencv/capaxis/include/ /usr/include/vdo
-COPY opencv/capaxis/lib/ /usr/lib/$TARGET_NAME
+COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
+COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
-COPY --from=acap-sdk /axis/device-api/include/vdo* /usr/include/vdo/
-COPY --from=acap-sdk /axis/device-api/lib/ /usr/lib/$TARGET_NAME/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/usr/include/vdo* /usr/include/vdo/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/usr/lib/ /usr/lib/$TARGET_NAME/
 
 # Get AXIS specific files for the runtime
-COPY opencv/capaxis/lib/ $TARGET_ROOT/usr/lib/
-COPY opencv/capaxis/stubs/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /axis/device-api/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
