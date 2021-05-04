@@ -1,5 +1,5 @@
-ARG ACAP_SDK_IMAGE=axisecp/acap-api
-ARG ACAP_SDK_TAG=3.3-aarch64-ubuntu20.04
+ARG ACAP_SDK_IMAGE=axisecp/acap-native-sdk
+ARG ACAP_SDK_TAG=1.0_alpha1-armv7hf-ubuntu20.04
 
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
@@ -28,7 +28,7 @@ ARG SCIPY_BUILD_CORES=4
 
 
 # The ACAP Native SDK is used to get certain libs and headers
-FROM ${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-sdk
+FROM ${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
 # libs: /axis/device-api/lib/
 # headers: /axis/device-api/include/
 
@@ -315,20 +315,22 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystemd0:armhf
 
+RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
+
 # Get AXIS specific files for the build environment
 RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
 ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
 COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
 COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
-COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/usr/include/vdo* /usr/include/vdo/
-COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/usr/lib/ /usr/lib/$TARGET_NAME/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/include/vdo* /usr/include/vdo/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/ /usr/lib/$TARGET_NAME/
 
 # Get AXIS specific files for the runtime
 COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
-COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/stubs
-COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-sdk /opt/axis/sdk/temp/sysroots/armv7hf/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/glib-2.0 $TARGET_ROOT/usr/lib/glib-2.0
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
@@ -358,8 +360,8 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy/core/include \
           -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/dist-packages \
-          -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT -L stubs" \
-          -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT -L stubs" \
+          -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
+          -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
           -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
           -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/usr/include \
           -D BLAS_LIBRARIES=$TARGET_ROOT/usr/lib/libopenblas.so \
@@ -412,10 +414,6 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
 
 # Build openCV libraries and other tools
 RUN make -j ${OPENCV_BUILD_CORES} install
-
-# Remove the stubs that were used to build the application
-# These are instead mounted from firmware during runtime
-RUN rm -rf $TARGET_ROOT/stubs
 
 # Make the header files available by creating a symlink to
 # the path specified in CMAKE params
