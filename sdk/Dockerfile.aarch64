@@ -1,12 +1,14 @@
 ARG ACAP_SDK_IMAGE=axisecp/acap-native-sdk
-ARG ACAP_SDK_TAG=1.0_alpha1-armv7hf-ubuntu20.04
+ARG ACAP_SDK_TAG=1.0_alpha1-aarch64-ubuntu20.04
 
 #-- Build configuration --#
-ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+# Todo: add correct compiler flags, maybe  -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits
+# further reading: https://developer.arm.com/documentation/dui0774/i/Compiler-Command-line-Options/-mcpu
+ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto" # -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits"
 ARG BUILD_ROOT=/build-root
 ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
 ARG SDK_ROOT_DIR=/axis/
-ARG TARGET_NAME=arm-linux-gnueabihf
+ARG TARGET_NAME=aarch64-linux-gnu
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
 
@@ -66,14 +68,14 @@ deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main
  > /etc/apt/sources.list
 
 # Get crosscompilation toolchain and related packages
-RUN dpkg --add-architecture armhf
+RUN dpkg --add-architecture arm64
 RUN apt-get update && apt-get install -yf --no-install-recommends \
         autoconf \
         automake \
         autotools-dev \
         build-essential \
         ca-certificates \
-        crossbuild-essential-armhf \
+        crossbuild-essential-arm64 \
         cmake \
         curl \
         gfortran-$TARGET_NAME \
@@ -92,8 +94,7 @@ RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
 
-
-FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
+FROM arm64v8/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG ARCH_CFLAGS
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
@@ -110,7 +111,7 @@ ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
-# qemu is used to emulate arm32v7
+# qemu is used to emulate arm64v8
 COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -133,7 +134,7 @@ ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
-RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA53 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
@@ -242,8 +243,8 @@ COPY tfserving/tf_proto_utils.py .
 ARG TARGET_ROOT=/target-root
 RUN mkdir -p ${BUILD_ROOT}/python-grpc
 RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-        python3-grpcio:armhf \
-        python3-protobuf:armhf
+        python3-grpcio:arm64 \
+        python3-protobuf:arm64
 
 WORKDIR $TARGET_ROOT
 RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
@@ -256,17 +257,16 @@ RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not 
 
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
-ARG TARGET_NAME
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
-    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
-    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf libgomp1:armhf
+    libleptonica-dev:arm64 libicu-dev:arm64 libpango1.0-dev:arm64 libcairo2-dev:arm64 \
+    libpng-dev:arm64 libjpeg8-dev:arm64 libtiff5-dev:arm64 libgomp1:arm64
 RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
 RUN apt-get install --reinstall -y -f \
-    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
-    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf
+    libleptonica-dev:arm64 libicu-dev:arm64 libpango1.0-dev:arm64 libcairo2-dev:arm64 \
+    libpng-dev:arm64 libjpeg8-dev:arm64 libtiff5-dev:arm64
 
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
@@ -308,12 +308,13 @@ FROM build-base AS build-opencv
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
+ARG TARGET_NAME
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
-RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:armhf libsystemd0:armhf
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:arm64 libsystemd0:arm64
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystemd0:armhf
+RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:arm64 libsystemd0:arm64
 
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
 
@@ -323,14 +324,14 @@ ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
 COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
 COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/include/vdo* /usr/include/vdo/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/ /usr/lib/$TARGET_NAME/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/aarch64/usr/include/vdo* /usr/include/vdo/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/aarch64/usr/lib/ /usr/lib/$TARGET_NAME/
 
 # Get AXIS specific files for the runtime
 COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/glib-2.0 $TARGET_ROOT/usr/lib/glib-2.0
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/aarch64/usr/lib/glib-2.0 $TARGET_ROOT/usr/lib/glib-2.0
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/aarch64/usr/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/aarch64/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
@@ -349,7 +350,7 @@ RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_O
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
 
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
-RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake \
+RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake \
           -D CMAKE_BUILD_TYPE=RELEASE \
            # This path will contain all opencv header files
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
@@ -370,8 +371,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D WITH_OPENGL=ON \
           -D BUILD_JPEG=ON \
           -D ENABLE_NEON=ON \
-          -D CPU_BASELINE=NEON,VFPV3 \
-          -D ENABLE_VFPV3=ON \
+          -D CPU_BASELINE=NEON \
           -D WITH_AXIS_VDO=ON \
           -D CMAKE_SKIP_RPATH=ON \
           -D OPENCV_SKIP_PYTHON_LOADER=ON \
