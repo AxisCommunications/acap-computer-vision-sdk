@@ -462,7 +462,7 @@ COPY --from=build-python $TARGET_ROOT $SDK_ROOT_DIR/python
 COPY --from=build-python-numpy $TARGET_ROOT $SDK_ROOT_DIR/python-numpy
 COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytesseract
 COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
-#COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
+COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
 
