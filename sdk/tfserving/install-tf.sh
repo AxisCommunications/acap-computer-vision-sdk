@@ -3,7 +3,7 @@
 TF_DIR=$1
 TFS_DIR=$2
 INSTALL_PREFIX=$3
-PY_INSTALL_DIR=$INSTALL_PREFIX/usr/lib/python3/site-packages
+PY_INSTALL_DIR=$INSTALL_PREFIX/usr/lib/python3.8/dist-packages
 
 install -d "$PY_INSTALL_DIR"
 

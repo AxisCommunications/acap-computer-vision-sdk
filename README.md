@@ -53,3 +53,5 @@ The VDO integration allows accessing the camera's video streams through the Open
   * An OCR engine developed by Google.
 * `/axis/openblas`: [OpenBLAS](https://github.com/xianyi/OpenBLAS)
   * A library with optimized linear algebra operations which can accelerate many applications. 
+* `/axis/opencl`: [OpenCL](https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/)
+  * A general purpose parallel programming language. *Only available on the `-devel` image as the runtime files are mounted from the camera*
