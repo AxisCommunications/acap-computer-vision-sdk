@@ -1,11 +1,11 @@
-ARG ACAP_SDK_IMAGE=axisecp/acap-native-sdk
-ARG ACAP_SDK_TAG=1.0_alpha1-armv7hf-ubuntu20.04
-
 #-- Build configuration --#
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+ARG AXIS_ARCH=armv7hf
 ARG BUILD_ROOT=/build-root
+ARG DOCKERHUB_ARCH=arm32v7
 ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
 ARG SDK_ROOT_DIR=/axis/
+ARG UBUNTU_ARCH=armhf
 ARG TARGET_NAME=arm-linux-gnueabihf
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
@@ -26,11 +26,17 @@ ARG OPENCV_BUILD_CORES=2
 ARG NUMPY_BUILD_CORES=2
 ARG SCIPY_BUILD_CORES=4
 
+#-- ACAP SDK configuration --#
+ARG REPO=axisecp
+ARG ACAP_SDK_IMAGE=acap-native-sdk
+ARG ACAP_SDK_VERSION=1.0_alpha1
+ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
+
 
 # The ACAP Native SDK is used to get certain libs and headers
-FROM ${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
-# libs: /axis/device-api/lib/
-# headers: /axis/device-api/include/
+FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
+# libs: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/
+# headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
 
 
 # A base image with common tools for crosscompilation
@@ -39,7 +45,10 @@ FROM ubuntu:${UBUNTU_VERSION} AS build-base
 # Setup environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ARG ARCH_CFLAGS
+ARG AXIS_ARCH
 ARG BUILD_ROOT
+ARG DOCKERHUB_ARCH
+ARG UBUNTU_ARCH
 ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
@@ -47,7 +56,10 @@ ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV ARCH_CFLAGS=$ARCH_CFLAGS
+ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
+ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV TARGET_NAME=$TARGET_NAME
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
@@ -66,14 +78,14 @@ deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main
  > /etc/apt/sources.list
 
 # Get crosscompilation toolchain and related packages
-RUN dpkg --add-architecture armhf
+RUN dpkg --add-architecture $UBUNTU_ARCH
 RUN apt-get update && apt-get install -yf --no-install-recommends \
         autoconf \
         automake \
         autotools-dev \
         build-essential \
         ca-certificates \
-        crossbuild-essential-armhf \
+        crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
         gfortran-$TARGET_NAME \
@@ -93,10 +105,13 @@ RUN mkdir -p ${BUILD_ROOT}
 
 
 
-FROM arm32v7/ubuntu:${UBUNTU_VERSION} as build-base-arm
+FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG ARCH_CFLAGS
+ARG AXIS_ARCH
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
+ARG DOCKERHUB_ARCH
+ARG UBUNTU_ARCH
 ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
@@ -104,7 +119,10 @@ ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV ARCH_CFLAGS=$ARCH_CFLAGS
+ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
+ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV TARGET_NAME=$TARGET_NAME
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
@@ -242,8 +260,8 @@ COPY tfserving/tf_proto_utils.py .
 ARG TARGET_ROOT=/target-root
 RUN mkdir -p ${BUILD_ROOT}/python-grpc
 RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-        python3-grpcio:armhf \
-        python3-protobuf:armhf
+        python3-grpcio:$UBUNTU_ARCH \
+        python3-protobuf:$UBUNTU_ARCH
 
 WORKDIR $TARGET_ROOT
 RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
@@ -260,13 +278,13 @@ ARG TARGET_NAME
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
-    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
-    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf libgomp1:armhf
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH libgomp1:$UBUNTU_ARCH
 RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
 RUN apt-get install --reinstall -y -f \
-    libleptonica-dev:armhf libicu-dev:armhf libpango1.0-dev:armhf libcairo2-dev:armhf \
-    libpng-dev:armhf libjpeg8-dev:armhf libtiff5-dev:armhf
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH
 
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
@@ -311,9 +329,9 @@ ARG OPENCV_VERSION
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
-RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:armhf libsystemd0:armhf
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:armhf libsystemd0:armhf
+RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
 
@@ -323,17 +341,23 @@ ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
 COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
 COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/include/vdo* /usr/include/vdo/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/ /usr/lib/$TARGET_NAME/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
 
 # Get AXIS specific files for the runtime
+# The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
+COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/glib-2.0 $TARGET_ROOT/usr/lib/glib-2.0
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/armv7hf/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_NAME
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_NAME
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
+
+# Add missing symlink
+RUN ln -s /usr/lib/$TARGET_NAME/libfido.so.1 /usr/lib/$TARGET_NAME/libfido.so
+RUN ln -s $TARGET_ROOT/usr/lib/libfido.so.1 $TARGET_ROOT/usr/lib/libfido.so
 
 # Download OpenCV
 WORKDIR $BUILD_ROOT
@@ -439,9 +463,19 @@ COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
 
+FROM build-base AS build-opencl-devel
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/pkgconfig/opencl.pc $TARGET_ROOT/usr/lib/pkgconfig/opencl.pc
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libEGL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libOpenCL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGAL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libVSC* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLES* $TARGET_ROOT/usr/lib/
+
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
+COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
 
 # General pruning 
 WORKDIR $SDK_ROOT_DIR
