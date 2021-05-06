@@ -54,4 +54,8 @@ The VDO integration allows accessing the camera's video streams through the Open
 * `/axis/openblas`: [OpenBLAS](https://github.com/xianyi/OpenBLAS)
   * A library with optimized linear algebra operations which can accelerate many applications. 
 * `/axis/opencl`: [OpenCL](https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/)
-  * A general purpose parallel programming language. *Only available on the `-devel` image as the runtime files are mounted from the camera*
+  * A general purpose parallel programming language.
+  * *Only available on the `-devel` image as the runtime files are mounted from the camera*
+* `/axis/tfproto`: TensorFlow protobuf files
+  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-application-examples/tree/master/object-detector-cpp). 
+  * *Only available on the `-devel` image as the proto files are only used for compilation*
