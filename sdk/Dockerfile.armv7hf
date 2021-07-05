@@ -29,7 +29,7 @@ ARG SCIPY_BUILD_CORES=4
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
-ARG ACAP_SDK_VERSION=1.0_alpha1
+ARG ACAP_SDK_VERSION=1.0_beta1
 ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
 
 
@@ -165,9 +165,9 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
         libpython3.8-minimal libpython3.8-stdlib mime-support python3 \
         python3-dev python3-distutils python3-lib2to3 python3-minimal \
         python3.8 python3.8-dev python3.8-minimal zlib1g-dev libssl1.1 \
-        python3-six python3-setuptools libssl-dev	
+        python3-six python3-setuptools libssl-dev
 WORKDIR $TARGET_ROOT
-RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done 
+RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && rm -rf $TARGET_ROOT/lib
 WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
@@ -207,7 +207,7 @@ RUN echo "[openblas]\n" \
          "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
          >> site.cfg
 RUN python3.8 -m pip install cython
-RUN python3.8 setup.py config 
+RUN python3.8 setup.py config
 RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
 RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
 RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
@@ -252,8 +252,8 @@ RUN apt-get install -y --no-install-recommends \
     python3-grpcio
 
 WORKDIR ${BUILD_ROOT}
-RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git 
-RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git 
+RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
+RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
@@ -319,7 +319,7 @@ ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
 RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
 WORKDIR $TARGET_ROOT
 RUN mkdir -p usr/lib/python3.8/dist-packages/
-RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/ 
+RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/
 RUN mkdir -p usr && mv bin usr
 RUN rm -rf Pillow*  pytesseract*
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
@@ -352,8 +352,8 @@ COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_NAME
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_NAME
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_NAME/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_NAME/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
@@ -510,7 +510,7 @@ COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
 COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
 COPY --from=build-tensorflow-proto-devel $TARGET_ROOT $SDK_ROOT_DIR/tfproto
 
-# General pruning 
+# General pruning
 WORKDIR $SDK_ROOT_DIR
 RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
 RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
