@@ -168,11 +168,12 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
         python3-six python3-setuptools libssl-dev
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && rm -rf $TARGET_ROOT/lib
+RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
+    rm -rf $TARGET_ROOT/lib
 WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
-
+RUN cp -r $TARGET_ROOT/usr/local/* $TARGET_ROOT/usr && rm -r $TARGET_ROOT/usr/local
 
 # Build NumPy with OpenBLAS
 # This build is done emulated right now until more work
