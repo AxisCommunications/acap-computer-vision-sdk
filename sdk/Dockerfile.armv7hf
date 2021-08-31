@@ -210,9 +210,6 @@ RUN echo "[openblas]\n" \
 RUN python3.8 -m pip install cython
 RUN python3.8 setup.py config
 RUN python3.8 setup.py build -j ${NUMPY_BUILD_CORES} install --prefix $TARGET_ROOT/usr
-RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
-RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/numpy*/numpy $TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy
-RUN rm -rf $TARGET_ROOT/usr/lib/python3.8/site-packages
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
@@ -240,15 +237,12 @@ ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3.8 -m pip install cython tempita
 RUN python3.8 setup.py build -j ${SCIPY_BUILD_CORES}
 RUN python3.8 setup.py install --prefix=$TARGET_ROOT/usr
-RUN mkdir -p $TARGET_ROOT/usr/lib/python3.8/dist-packages
-RUN mv $TARGET_ROOT/usr/lib/python3.8/site-packages/scipy*/scipy $TARGET_ROOT/usr/lib/python3.8/dist-packages/scipy
-RUN rm -rf $TARGET_ROOT/usr/lib/python3.8/site-packages
 
 
-FROM build-base as build-python-tfserving
+FROM build-base AS build-python-tfserving
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
-    libprotobuf-dev \
+    libprotobuf-dev \   
     python3-grpc-tools \
     python3-grpcio
 
@@ -257,24 +251,29 @@ RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tenso
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
-WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
+WORKDIR $TARGET_ROOT/usr/lib/python3.8/site-packages
 COPY tfserving/tf_proto_utils.py .
-ARG TARGET_ROOT=/target-root
-RUN mkdir -p ${BUILD_ROOT}/python-grpc
-RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-        python3-grpcio:$UBUNTU_ARCH \
-        python3-protobuf:$UBUNTU_ARCH python3-six:$UBUNTU_ARCH
-WORKDIR $TARGET_ROOT
-RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN find $TARGET_ROOT | grep six
+#RUN mkdir -p ${BUILD_ROOT}/python-grpc
+#RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
+#        python3-grpcio:$UBUNTU_ARCH \
+#        python3-protobuf:$UBUNTU_ARCH python3-six:$UBUNTU_ARCH
+#WORKDIR $TARGET_ROOT
+#RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+#RUN cp -r $TARGET_ROOT/usr/lib/python3/dist-packages/* $TARGET_ROOT/usr/lib/python3.8/dist-packages/ && rm -r $TARGET_ROOT/usr/lib/python3
+#RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
+#RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
+#RUN cp -r lib/* usr/lib/ && rm -rf lib
+#WORKDIR $TARGET_ROOT/usr
+#RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
 
-RUN cp -r $TARGET_ROOT/usr/lib/python3/dist-packages/* $TARGET_ROOT/usr/lib/python3.8/dist-packages/ && rm -r $TARGET_ROOT/usr/lib/python3
-RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
-RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
-RUN cp -r lib/* usr/lib/ && rm -rf lib
-WORKDIR $TARGET_ROOT/usr
-RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+FROM build-base-arm AS build-python-tfserving-arm
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-tfserving $TARGET_ROOT $TARGET_ROOT
 
+ENV PATH=$BUILD_ROOT/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+RUN python3 -m pip install --prefix=$TARGET_ROOT grpcio protobuf six
 
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -317,12 +316,7 @@ RUN apt-get install -y zlib1g-dev libjpeg8-dev
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
-RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
-WORKDIR $TARGET_ROOT
-RUN mkdir -p usr/lib/python3.8/dist-packages/
-RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/
-RUN mkdir -p usr && mv bin usr
-RUN rm -rf Pillow*  pytesseract*
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 
@@ -386,8 +380,8 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D PYTHON3_INCLUDE_PATH=/usr/include/python3.8 \
           -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
           -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
-          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/dist-packages/numpy/core/include \
-          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/dist-packages \
+          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/site-packages/numpy/core/include \
+          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/site-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
           -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
           -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
@@ -448,7 +442,7 @@ RUN make -j ${OPENCV_BUILD_CORES} install
 WORKDIR $TARGET_ROOT/usr/include
 RUN ln -sf opencv4/opencv2 opencv2
 
-WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
+WORKDIR $TARGET_ROOT/usr/lib/python3.8/site-packages
 RUN mv cv2.*.so cv2.so
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
@@ -462,7 +456,7 @@ COPY --from=build-opencv $TARGET_ROOT $SDK_ROOT_DIR/opencv
 COPY --from=build-python $TARGET_ROOT $SDK_ROOT_DIR/python
 COPY --from=build-python-numpy $TARGET_ROOT $SDK_ROOT_DIR/python-numpy
 COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytesseract
-COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
+COPY --from=build-python-tfserving-arm $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
