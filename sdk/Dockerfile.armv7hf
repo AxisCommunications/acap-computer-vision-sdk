@@ -39,7 +39,7 @@ FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
 # headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
 
 
-# A base image with common tools for crosscompilation
+# Create a base image with build tools, env vars, etc.,
 FROM ubuntu:${UBUNTU_VERSION} AS build-base
 
 # Setup environment variables
@@ -104,7 +104,7 @@ RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
 
-
+# Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG ARCH_CFLAGS
 ARG AXIS_ARCH
@@ -128,7 +128,7 @@ ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
-# qemu is used to emulate arm32v7
+# qemu is used to emulate arm
 COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -155,49 +155,30 @@ RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
-#FROM build-base-arm AS build-python
-# As we're not building python ourselves at this moment, PYTHON_VERSION has no effect
-#ARG PYTHON_VERSION
-#RUN mkdir -p $BUILD_ROOT/python
-#RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python -y -f \
-#        file libexpat1 libexpat1-dev libmpdec2 \
-#        libpython3.8 libpython3.8-dev \
-#        libpython3.8-minimal libpython3.8-stdlib \
-#        python3-dev python3.8-dev zlib1g-dev libssl1.1 \
-#        libssl-dev
-#WORKDIR $TARGET_ROOT
-#RUN for f in $BUILD_ROOT/python/archives/*.deb; do echo $f && find $TARGET_ROOT -type d && dpkg -x $f $TARGET_ROOT; done
-#RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
-#    rm -rf $TARGET_ROOT/lib
-#WORKDIR ${BUILD_ROOT}/pip
-#RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-#RUN $TARGET_ROOT/usr/bin/python3.8 get-pip.py
-#RUN cp -r $TARGET_ROOT/usr/local/* $TARGET_ROOT/usr && rm -r $TARGET_ROOT/usr/local
-#RUN rm -r $TARGET_ROOT/usr/lib/python3 $TARGET_ROOT/usr/lib/python3.9
-#ENV PATH=$TARGET_ROOT/usr/bin:$PATH
-#RUN python3 -m pip list
-
-
+# Crosscompilation of Python
 FROM build-base as build-python-cross
 ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python_deps
+# Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
         zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
     rm -rf $TARGET_ROOT/lib
+# Copy libs needed for crosscompilation
 RUN cp $TARGET_ROOT/usr/lib/$TARGET_NAME/libffi* $TARGET_ROOT/usr/lib/
 RUN cp $TARGET_ROOT/usr/lib/$TARGET_NAME/libssl* $TARGET_ROOT/usr/lib/
 RUN cp -R $TARGET_ROOT/usr/lib/$TARGET_NAME/libz* $TARGET_ROOT/usr/lib/
 RUN cp -R $TARGET_ROOT/usr/lib/$TARGET_NAME/libcrypt* $TARGET_ROOT/usr/lib/
-#RUN cp -r $TARGET_ROOT/usr/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/ && rm -r $TARGET_ROOT/usr/lib/$TARGET_NAME
 RUN cp -r $TARGET_ROOT/usr/include/$TARGET_NAME/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_NAME
 
+# Download Python
 RUN curl https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz -o $BUILD_ROOT/python.tgz
 RUN tar -xf $BUILD_ROOT/python.tgz -C $BUILD_ROOT/
 WORKDIR $BUILD_ROOT/Python-$PYTHON_VERSION
 
+# Setup crosscompilation environment
 ENV CC=$TARGET_NAME-gcc
 ENV CXX=$TARGET_NAME-g++
 ENV AR=$TARGET_NAME-ar
@@ -217,9 +198,10 @@ WORKDIR $TARGET_ROOT/usr/bin
 RUN ln -s python3.*[0-9] python3
 RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_NAME/python3.8 && \
     cp -r $TARGET_ROOT/usr/include/python3.8/* $TARGET_ROOT/usr/include/$TARGET_NAME/python3.8
-RUN find $TARGET_ROOT/usr/include/$TARGET_NAME/python3.8/
 
 
+# Continue Python install with installing
+# pip in emulated environment
 FROM build-base-arm as build-python
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -227,6 +209,8 @@ COPY --from=build-python-cross $TARGET_ROOT $TARGET_ROOT
 WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
+# Fix to not use static paths to $TARGET_ROOT
+RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*
 
 
 # Build NumPy with OpenBLAS
@@ -261,10 +245,10 @@ RUN echo "[openblas]\n" \
          "lapack_libs = openblas\n" \
          "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
          >> site.cfg
-RUN python3.8 -m pip install cython
-RUN python3.8 setup.py config
-RUN python3.8 setup.py bdist_wheel
-RUN python3.8 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install cython
+RUN python3 setup.py config
+RUN python3 setup.py bdist_wheel
+RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
@@ -288,8 +272,8 @@ COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3 -m pip install cython tempita
-RUN python3.8 setup.py bdist_wheel
-RUN python3.8 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN python3 setup.py bdist_wheel
+RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
 FROM build-base AS build-python-tfserving-prestage
@@ -304,25 +288,16 @@ RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tenso
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
-WORKDIR $TARGET_ROOT/usr/lib/python3.8/site-packages
-COPY tfserving/tf_proto_utils.py .
-#RUN mkdir -p ${BUILD_ROOT}/python-grpc
-#RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-#        python3-grpcio:$UBUNTU_ARCH \
-#        python3-protobuf:$UBUNTU_ARCH python3-six:$UBUNTU_ARCH
-#WORKDIR $TARGET_ROOT
-#RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-#RUN cp -r $TARGET_ROOT/usr/lib/python3/dist-packages/* $TARGET_ROOT/usr/lib/python3.8/dist-packages/ && rm -r $TARGET_ROOT/usr/lib/python3
-#RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
-#RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
-#RUN cp -r lib/* usr/lib/ && rm -rf lib
-#WORKDIR $TARGET_ROOT/usr
-#RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+
 
 FROM build-base-arm AS build-python-tfserving
+COPY tfserving/tf_proto_utils $BUILD_ROOT/
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
+WORKDIR $BUILD_ROOT/tf_proto_utils
+RUN python3 setup.py bdist_wheel 
+RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -429,7 +404,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
            # This path will contain all opencv header files
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
           -D INSTALL_C_EXAMPLES=OFF \
-          -D PYTHON3_EXECUTABLE=/usr/bin/python3.8 \
+          -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
           -D PYTHON3_INCLUDE_PATH=/usr/include/python3.8 \
           -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
           -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
