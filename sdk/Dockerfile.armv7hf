@@ -159,18 +159,18 @@ RUN make install PREFIX=$TARGET_ROOT/usr
 FROM build-base as build-python-cross
 ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python_deps
+
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH
+        zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
     rm -rf $TARGET_ROOT/lib
-# Copy libs needed for crosscompilation
-RUN cp $TARGET_ROOT/usr/lib/$TARGET_NAME/libffi* $TARGET_ROOT/usr/lib/
-RUN cp $TARGET_ROOT/usr/lib/$TARGET_NAME/libssl* $TARGET_ROOT/usr/lib/
-RUN cp -R $TARGET_ROOT/usr/lib/$TARGET_NAME/libz* $TARGET_ROOT/usr/lib/
-RUN cp -R $TARGET_ROOT/usr/lib/$TARGET_NAME/libcrypt* $TARGET_ROOT/usr/lib/
+
+# Copy selected libs we need for python compilation
+WORKDIR $TARGET_ROOT/usr/lib/$TARGET_NAME/
+RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* ..
 RUN cp -r $TARGET_ROOT/usr/include/$TARGET_NAME/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_NAME
 
 # Download Python
@@ -291,17 +291,18 @@ RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
 
 FROM build-base-arm AS build-python-tfserving
-COPY tfserving/tf_proto_utils $BUILD_ROOT/
+COPY tfserving $BUILD_ROOT/tfserving
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
-WORKDIR $BUILD_ROOT/tf_proto_utils
-RUN python3 setup.py bdist_wheel 
-RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
+WORKDIR $BUILD_ROOT/tfserving
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
-RUN python3 -m pip install --prefix=$TARGET_ROOT grpcio protobuf six
+RUN python3 setup.py bdist_wheel 
+RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio protobuf six
+
 
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -344,7 +345,7 @@ RUN apt-get install -y zlib1g-dev libjpeg8-dev
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
-RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 
