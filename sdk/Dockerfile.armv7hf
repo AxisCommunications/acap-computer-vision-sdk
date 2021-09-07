@@ -9,7 +9,7 @@ ARG UBUNTU_ARCH=armhf
 ARG TARGET_NAME=arm-linux-gnueabihf
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
-ARG UBUNTU_VERSION_CODENAME=focal
+ARG UBUNTU_CODENAME=focal
 
 #-- Versions of installed packages --#
 ARG NUMPY_VERSION=v1.19.5
@@ -51,7 +51,7 @@ ARG BUILD_ROOT
 ARG DOCKERHUB_ARCH
 ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
-ARG UBUNTU_VERSION_CODENAME
+ARG UBUNTU_CODENAME
 ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
@@ -63,6 +63,7 @@ ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
 ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
+ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 ENV TARGET_NAME=$TARGET_NAME
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
@@ -71,14 +72,14 @@ ENV https_proxy=$https_proxy
 
 # Add source for target arch
 RUN echo \
-"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME main restricted universe multiverse\n\
-deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME-updates main restricted universe multiverse\n\
-deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME-backports main restricted universe multiverse\n\
-deb [arch=amd64] http://security.ubuntu.com/ubuntu $UBUNTU_VERSION_CODENAME-security main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-updates main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-backports main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-security main restricted universe multiverse"\
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu $UBUNTU_CODENAME-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-security main restricted universe multiverse"\
  > /etc/apt/sources.list
 
 # Get crosscompilation toolchain and related packages
