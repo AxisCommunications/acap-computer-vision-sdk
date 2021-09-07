@@ -9,6 +9,7 @@ ARG UBUNTU_ARCH=armhf
 ARG TARGET_NAME=arm-linux-gnueabihf
 ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
+ARG UBUNTU_VERSION_CODENAME=focal
 
 #-- Versions of installed packages --#
 ARG NUMPY_VERSION=v1.19.5
@@ -48,7 +49,9 @@ ARG ARCH_CFLAGS
 ARG AXIS_ARCH
 ARG BUILD_ROOT
 ARG DOCKERHUB_ARCH
+ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
+ARG UBUNTU_VERSION_CODENAME
 ARG TARGET_NAME
 ARG TARGET_ROOT
 ARG http_proxy
@@ -65,16 +68,17 @@ ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
+
 # Add source for target arch
 RUN echo \
-"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse\n\
-deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse\n\
-deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse\n\
-deb [arch=amd64] http://security.ubuntu.com/ubuntu focal-security main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse\n\
-deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse"\
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_VERSION_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu $UBUNTU_VERSION_CODENAME-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_VERSION_CODENAME-security main restricted universe multiverse"\
  > /etc/apt/sources.list
 
 # Get crosscompilation toolchain and related packages
@@ -103,6 +107,9 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
+# Save a string of what python major.minor version we're using
+# for paths, etc.
+RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
 # Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
@@ -111,6 +118,7 @@ ARG AXIS_ARCH
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
 ARG DOCKERHUB_ARCH
+ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
 ARG TARGET_NAME
 ARG TARGET_ROOT
@@ -143,6 +151,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
+# Save a string of what python major.minor version we're using
+# for paths, etc.
+RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
+
 
 # Build OpenBLAS
 FROM build-base AS build-openblas
@@ -159,6 +171,8 @@ RUN make install PREFIX=$TARGET_ROOT/usr
 FROM build-base as build-python-cross
 ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python_deps
+WORKDIR /usr/bin
+RUN ln -s python3.*[0-9] python
 
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
@@ -191,13 +205,14 @@ ENV LDFLAGS="-L/usr/lib/$TARGET_NAME -L$TARGET_ROOT/usr/lib"
 RUN ./configure --host=$TARGET_NAME --with-openssl=$TARGET_ROOT/usr \
     --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
     --disable-ipv6 ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
-    ac_cv_have_long_long_format=yes --enable-shared
-RUN make HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes
+    ac_cv_have_long_long_format=yes --enable-shared \
+    --with-lto --enable-optimizations
+RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes
 RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
 RUN ln -s python3.*[0-9] python3
-RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_NAME/python3.8 && \
-    cp -r $TARGET_ROOT/usr/include/python3.8/* $TARGET_ROOT/usr/include/$TARGET_NAME/python3.8
+RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version) && \
+    cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version)
 
 
 # Continue Python install with installing
@@ -232,7 +247,6 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 WORKDIR $BUILD_ROOT
 RUN git clone --depth 1 --branch ${NUMPY_VERSION}  https://github.com/numpy/numpy
 WORKDIR $BUILD_ROOT/numpy
-ENV CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/python3.8 $ARCH_CFLAGS"
 RUN cp site.cfg.example site.cfg
 RUN echo "[openblas]\n" \
          "libraries = openblas\n" \
@@ -245,10 +259,10 @@ RUN echo "[openblas]\n" \
          "lapack_libs = openblas\n" \
          "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
          >> site.cfg
-RUN python3 -m pip install cython
-RUN python3 setup.py config
-RUN python3 setup.py bdist_wheel
-RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py bdist_wheel
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
@@ -406,11 +420,11 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
           -D INSTALL_C_EXAMPLES=OFF \
           -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
-          -D PYTHON3_INCLUDE_PATH=/usr/include/python3.8 \
-          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
-          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/libpython3.8.so \
-          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/python3.8/site-packages/numpy/core/include \
-          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/python3.8/site-packages \
+          -D PYTHON3_INCLUDE_PATH=/usr/include/$(cat /tmp/python_version) \
+          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/lib$(cat /tmp/python_version).so \
+          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/lib$(cat /tmp/python_version).so \
+          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages/numpy/core/include \
+          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
           -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
           -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
@@ -471,9 +485,9 @@ RUN make -j ${OPENCV_BUILD_CORES} install
 WORKDIR $TARGET_ROOT/usr/include
 RUN ln -sf opencv4/opencv2 opencv2
 
-WORKDIR $TARGET_ROOT/usr/lib/python3.8/site-packages
-RUN mv cv2.*.so cv2.so
-RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
+RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages && \
+    mv cv2.*.so cv2.so && \
+    cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
 
 FROM ubuntu:${UBUNTU_VERSION} AS packages
