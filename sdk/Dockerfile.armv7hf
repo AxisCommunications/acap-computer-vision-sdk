@@ -168,7 +168,8 @@ RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
-FROM build-base-arm as build-python
+# Crosscompilation of Python
+FROM build-base as build-python-cross
 ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python_deps
 WORKDIR /usr/bin
@@ -176,14 +177,15 @@ RUN ln -s python3.*[0-9] python
 
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        zlib1g-dev libssl1.1 libffi-dev libssl-dev libreadline6-dev
+        zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
     rm -rf $TARGET_ROOT/lib
-RUN cp -r $TARGET_ROOT/usr/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/ && rm -r $TARGET_ROOT/usr/lib/$TARGET_NAME
 
+# Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/$TARGET_NAME/
+RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* ..
 RUN cp -r $TARGET_ROOT/usr/include/$TARGET_NAME/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_NAME
 
 # Download Python
@@ -191,24 +193,34 @@ RUN curl https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSIO
 RUN tar -xf $BUILD_ROOT/python.tgz -C $BUILD_ROOT/
 WORKDIR $BUILD_ROOT/Python-$PYTHON_VERSION
 
-# Setup compilation environment
+# Setup crosscompilation environment
+ENV CC=$TARGET_NAME-gcc
+ENV CXX=$TARGET_NAME-g++
+ENV AR=$TARGET_NAME-ar
+ENV LD=$TARGET_NAME-ld
+ENV RANLIB=$TARGET_NAME-ranlib
 ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
-ENV LDFLAGS="-L/usr/lib -L$TARGET_ROOT/usr/lib"
-RUN ./configure --with-openssl=$TARGET_ROOT/usr \
-    --prefix=$TARGET_ROOT/usr \
-    --disable-ipv6 --enable-shared \
+ENV LDFLAGS="-L/usr/lib/$TARGET_NAME -L$TARGET_ROOT/usr/lib"
+RUN ./configure --host=$TARGET_NAME --with-openssl=$TARGET_ROOT/usr \
+    --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
+    --enable-shared \
     --with-lto --enable-optimizations
-RUN make  
-RUN make altinstall prefix=$TARGET_ROOT/usr
+RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes
+RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
 RUN ln -s python3.*[0-9] python3
 RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version) && \
     cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version)
 
+
+# Continue Python install with installing
+# pip in emulated environment
+FROM build-base-arm as build-python
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
+COPY --from=build-python-cross $TARGET_ROOT $TARGET_ROOT
 WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
@@ -281,7 +293,7 @@ RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
-    libprotobuf-dev \   
+    libprotobuf-dev \
     python3-grpc-tools \
     python3-grpcio
 
@@ -301,7 +313,7 @@ COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 WORKDIR $BUILD_ROOT/tfserving
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
-RUN python3 setup.py bdist_wheel 
+RUN python3 setup.py bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 # Due to issues with the grpcio wheel, we force compilation of it
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
