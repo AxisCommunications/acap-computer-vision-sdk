@@ -205,7 +205,8 @@ ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV LDFLAGS="-L/usr/lib/$TARGET_NAME -L$TARGET_ROOT/usr/lib"
 RUN ./configure --host=$TARGET_NAME --with-openssl=$TARGET_ROOT/usr \
     --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
-    --enable-shared \
+    --enable-shared --disable-ipv6 \
+    ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
     --with-lto --enable-optimizations
 RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes
 RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
