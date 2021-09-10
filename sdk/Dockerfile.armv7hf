@@ -262,7 +262,7 @@ RUN echo "[openblas]\n" \
          >> site.cfg
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py bdist_wheel
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py build_ext -j $NUMPY_BUILD_CORES bdist_wheel
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
@@ -287,7 +287,7 @@ COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3 -m pip install cython tempita
-RUN python3 setup.py bdist_wheel
+RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
@@ -318,7 +318,7 @@ RUN python3 setup.py bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 # Due to issues with the grpcio wheel, we force compilation of it
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN python3 -m pip install --no-binary :all: --prefix=$TARGET_ROOT/usr grpcio
+RUN python3 -m pip install --no-binary :all: --no-dependencies --prefix=$TARGET_ROOT/usr grpcio
 
 
 FROM build-base AS build-tesseract
