@@ -35,6 +35,7 @@ ARG TFSERVING_VERSION=2.0.0
 #-- Build parallelization  --#
 ARG OPENBLAS_BUILD_CORES=2
 ARG OPENCV_BUILD_CORES=2
+ARG PYTHON_BUILD_CORES=4
 ARG NUMPY_BUILD_CORES=4
 ARG SCIPY_BUILD_CORES=4
 
@@ -56,11 +57,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS build-base
 
 # Setup environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ARG ARCH_CFLAGS
-ARG AXIS_ARCH
 ARG BUILD_ROOT
-ARG DOCKERHUB_ARCH
-ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
 ARG UBUNTU_CODENAME
 ARG TARGET_TOOLCHAIN
@@ -69,10 +66,7 @@ ARG http_proxy
 ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
-ENV ARCH_CFLAGS=$ARCH_CFLAGS
-ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
-ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
@@ -125,11 +119,8 @@ RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /
 
 # Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
-ARG ARCH_CFLAGS
-ARG AXIS_ARCH
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
-ARG DOCKERHUB_ARCH
 ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
 ARG TARGET_TOOLCHAIN
@@ -138,10 +129,7 @@ ARG http_proxy
 ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
-ENV ARCH_CFLAGS=$ARCH_CFLAGS
-ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
-ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
@@ -170,6 +158,7 @@ RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /
 
 # Crosscompile OpenBLAS
 FROM build-base AS build-openblas
+ARG ARCH_CFLAGS
 ARG OPENBLAS_BUILD_CORES
 ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
@@ -181,7 +170,9 @@ RUN make install PREFIX=$TARGET_ROOT/usr
 
 # Crosscompile Python
 FROM build-base as build-python-cross
+ARG ARCH_CFLAGS
 ARG PYTHON_VERSION
+ARG PYTHON_BUILD_CORES
 RUN mkdir -p $BUILD_ROOT/python_deps
 WORKDIR /usr/bin
 RUN ln -s python3.*[0-9] python
@@ -219,7 +210,7 @@ RUN ./configure --host=$TARGET_TOOLCHAIN --with-openssl=$TARGET_ROOT/usr \
     --enable-shared --disable-ipv6 \
     ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
     --with-lto --enable-optimizations
-RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
+RUN make HOSTPYTHON=/usr/bin/python3 -j $PYTHON_BUILD_CORES CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
 RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
 RUN ln -s python3.*[0-9] python3
@@ -249,6 +240,7 @@ RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*
 # Building numpy with OpenBLAS as BLAS/Lapack vs built-in BLAS/Lapack
 # shows between 50% to 99% lower proc times depending on the linalg op used
 FROM build-base-arm AS build-python-numpy
+ARG ARCH_CFLAGS
 ARG NUMPY_BUILD_CORES
 ARG NUMPY_VERSION
 ENV CFLAGS="$ARCH_CFLAGS"
@@ -284,6 +276,7 @@ RUN for f in ${BUILD_ROOT}/python-numpy-deps/archives/*.deb; do dpkg -x $f $TARG
 
 # Build SciPy with OpenBLAS
 FROM build-base-arm AS build-python-scipy
+ARG ARCH_CFLAGS
 ARG SCIPY_BUILD_CORES
 ARG SCIPY_VERSION
 ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
@@ -372,6 +365,7 @@ RUN ldconfig
 # Get the crosscompiled tesseract package and install the python wrapper
 # pytesseract
 FROM build-base-arm AS build-python-pytesseract
+ARG ARCH_CFLAGS
 ARG PYTESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/pillow_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
@@ -386,6 +380,8 @@ COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 # Crosscompile OpenCV with AXIS VDO bindings
 FROM build-base AS build-opencv
+ARG ARCH_CFLAGS
+ARG AXIS_ARCH
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
@@ -529,6 +525,7 @@ COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
 # Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel
+ARG AXIS_ARCH
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/pkgconfig/opencl.pc $TARGET_ROOT/usr/lib/pkgconfig/opencl.pc
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libEGL* $TARGET_ROOT/usr/lib/
