@@ -17,7 +17,7 @@ ARG OPENBLAS_VERSION=v0.3.14
 ARG OPENCV_VERSION=4.5.1
 ARG PYTHON_VERSION=3.8.8
 ARG PYTESSERACT_VERSION=0.3.7
-ARG SCIPY_VERSION=v1.4.1
+ARG SCIPY_VERSION=v1.7.1
 ARG TESSERACT_VERSION=4.1.1
 ARG TFSERVING_VERSION=2.0.0
 
@@ -319,8 +319,9 @@ ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
 RUN python3 setup.py bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 # Due to issues with the grpcio wheel, we force compilation of it
-RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN python3 -m pip install --no-binary :all: --no-dependencies --prefix=$TARGET_ROOT/usr grpcio
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six grpcio
+#RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
+#RUN python3 -m pip install --no-binary :all: --no-dependencies --prefix=$TARGET_ROOT/usr grpcio
 
 
 FROM build-base AS build-tesseract
