@@ -1,17 +1,28 @@
 #-- Build configuration --#
+# ARCH_CFLAGS is supplied as a compile option
 ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+# AXIS_ARCH is the AXIS platform descriptor
 ARG AXIS_ARCH=armv7hf
+# BUILD_ROOT defines where in the build containers the building takes place
 ARG BUILD_ROOT=/build-root
+# DOCKERHUB_ARCH is the DockerHub platform descriptor
 ARG DOCKERHUB_ARCH=arm32v7
+# OPENCV_MODULES defines what OpenCV modules to build
 ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
+# SDK_ROOT_DIR defines the root directory of the final SDK images
 ARG SDK_ROOT_DIR=/axis/
+# UBUNTU_ARCH is the Ubuntu platform descriptor
 ARG UBUNTU_ARCH=armhf
-ARG TARGET_NAME=arm-linux-gnueabihf
+# TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
+ARG TARGET_TOOLCHAIN=arm-linux-gnueabihf
+# TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
+# UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
 ARG UBUNTU_VERSION=20.04
+# UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
 ARG UBUNTU_CODENAME=focal
 
-#-- Versions of installed packages --#
+#-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.19.5
 ARG OPENBLAS_VERSION=v0.3.14
 ARG OPENCV_VERSION=4.5.1
@@ -52,7 +63,7 @@ ARG DOCKERHUB_ARCH
 ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
 ARG UBUNTU_CODENAME
-ARG TARGET_NAME
+ARG TARGET_TOOLCHAIN
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
@@ -64,7 +75,7 @@ ENV BUILD_ROOT=$BUILD_ROOT
 ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
-ENV TARGET_NAME=$TARGET_NAME
+ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
@@ -93,7 +104,7 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
-        gfortran-$TARGET_NAME \
+        gfortran-$TARGET_TOOLCHAIN \
         git \
         gfortran \
         libtool \
@@ -121,7 +132,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG DOCKERHUB_ARCH
 ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
-ARG TARGET_NAME
+ARG TARGET_TOOLCHAIN
 ARG TARGET_ROOT
 ARG http_proxy
 ARG https_proxy
@@ -132,7 +143,7 @@ ENV AXIS_ARCH=$AXIS_ARCH
 ENV BUILD_ROOT=$BUILD_ROOT
 ENV DOCKERHUB_ARCH=$DOCKERHUB_ARCH
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
-ENV TARGET_NAME=$TARGET_NAME
+ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
@@ -157,18 +168,18 @@ RUN mkdir -p ${BUILD_ROOT}
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
 
-# Build OpenBLAS
+# Crosscompile OpenBLAS
 FROM build-base AS build-openblas
 ARG OPENBLAS_BUILD_CORES
 ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
-RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_NAME-gcc FC=$TARGET_NAME-gfortran HOSTCC=gcc
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_TOOLCHAIN-gcc FC=$TARGET_TOOLCHAIN-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 
-# Crosscompilation of Python
+# Crosscompile Python
 FROM build-base as build-python-cross
 ARG PYTHON_VERSION
 RUN mkdir -p $BUILD_ROOT/python_deps
@@ -180,13 +191,13 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
         zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN mv $TARGET_ROOT/lib/$TARGET_NAME/* $TARGET_ROOT/usr/lib/$TARGET_NAME/ && \
+RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
     rm -rf $TARGET_ROOT/lib
 
 # Copy selected libs we need for python compilation
-WORKDIR $TARGET_ROOT/usr/lib/$TARGET_NAME/
+WORKDIR $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/
 RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* ..
-RUN cp -r $TARGET_ROOT/usr/include/$TARGET_NAME/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_NAME
+RUN cp -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN
 
 # Download Python
 RUN curl https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz -o $BUILD_ROOT/python.tgz
@@ -194,26 +205,26 @@ RUN tar -xf $BUILD_ROOT/python.tgz -C $BUILD_ROOT/
 WORKDIR $BUILD_ROOT/Python-$PYTHON_VERSION
 
 # Setup crosscompilation environment
-ENV CC=$TARGET_NAME-gcc
-ENV CXX=$TARGET_NAME-g++
-ENV AR=$TARGET_NAME-ar
-ENV LD=$TARGET_NAME-ld
-ENV RANLIB=$TARGET_NAME-ranlib
+ENV CC=$TARGET_TOOLCHAIN-gcc
+ENV CXX=$TARGET_TOOLCHAIN-g++
+ENV AR=$TARGET_TOOLCHAIN-ar
+ENV LD=$TARGET_TOOLCHAIN-ld
+ENV RANLIB=$TARGET_TOOLCHAIN-ranlib
 ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
-ENV LDFLAGS="-L/usr/lib/$TARGET_NAME -L$TARGET_ROOT/usr/lib"
-RUN ./configure --host=$TARGET_NAME --with-openssl=$TARGET_ROOT/usr \
+ENV LDFLAGS="-L/usr/lib/$TARGET_TOOLCHAIN -L$TARGET_ROOT/usr/lib"
+RUN ./configure --host=$TARGET_TOOLCHAIN --with-openssl=$TARGET_ROOT/usr \
     --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
     --enable-shared --disable-ipv6 \
     ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
     --with-lto --enable-optimizations
-RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes
-RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_NAME CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
+RUN make HOSTPYTHON=/usr/bin/python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
+RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
 RUN ln -s python3.*[0-9] python3
-RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version) && \
-    cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_NAME/$(cat /tmp/python_version)
+RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version) && \
+    cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version)
 
 
 # Continue Python install with installing
@@ -288,11 +299,12 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
-RUN python3 -m pip install cython tempita pybind11
+RUN python3 -m pip install cython tempita pybind11 pythran
 RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
+# Compile the protofiles natively
 FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
@@ -306,7 +318,7 @@ RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensor
 COPY tfserving/install-tf.sh .
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
-
+# Install the resulting tf-related packages and dependencies
 FROM build-base-arm AS build-python-tfserving
 COPY tfserving $BUILD_ROOT/tfserving
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
@@ -324,9 +336,10 @@ RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six grpcio
 #RUN python3 -m pip install --no-binary :all: --no-dependencies --prefix=$TARGET_ROOT/usr grpcio
 
 
+# Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
-ARG TARGET_NAME
+ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
@@ -341,21 +354,23 @@ RUN apt-get install --reinstall -y -f \
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
 WORKDIR ${BUILD_ROOT}/tesseract
-ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/$TARGET_NAME:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN:$LD_LIBRARY_PATH
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
-ENV CC=${TARGET_NAME}-gcc
-ENV CXX=${TARGET_NAME}-g++
-ENV CPP=${TARGET_NAME}-g++
+ENV CC=${TARGET_TOOLCHAIN}-gcc
+ENV CXX=${TARGET_TOOLCHAIN}-g++
+ENV CPP=${TARGET_TOOLCHAIN}-g++
 ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 RUN ./autogen.sh
-RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_NAME
+RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_TOOLCHAIN
 RUN make
 RUN make install
 RUN ldconfig
 
 
+# Get the crosscompiled tesseract package and install the python wrapper
+# pytesseract
 FROM build-base-arm AS build-python-pytesseract
 ARG PYTESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/pillow_deps
@@ -369,6 +384,7 @@ RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" p
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 
+# Crosscompile OpenCV with AXIS VDO bindings
 FROM build-base AS build-opencv
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
@@ -383,21 +399,21 @@ RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH li
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
 
 # Get AXIS specific files for the build environment
-RUN mkdir -p /usr/lib/$TARGET_NAME/pkgconfig
-ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_NAME/pkgconfig
-COPY opencv/capaxis/$TARGET_NAME/include/ /usr/include/vdo
-COPY opencv/capaxis/$TARGET_NAME/lib/ /usr/lib/$TARGET_NAME
-COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_NAME/pkgconfig/
+RUN mkdir -p /usr/lib/$TARGET_TOOLCHAIN/pkgconfig
+ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_TOOLCHAIN/pkgconfig
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/include/ /usr/include/vdo
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
+COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
 
 # Get AXIS specific files for the runtime
 # The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
-COPY opencv/capaxis/$TARGET_NAME/stubs/ $TARGET_ROOT/usr/lib/
-COPY opencv/capaxis/$TARGET_NAME/lib/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_NAME/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_NAME/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_TOOLCHAIN/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
@@ -427,8 +443,8 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D INSTALL_C_EXAMPLES=OFF \
           -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
           -D PYTHON3_INCLUDE_PATH=/usr/include/$(cat /tmp/python_version) \
-          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/lib$(cat /tmp/python_version).so \
-          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_NAME/lib$(cat /tmp/python_version).so \
+          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
+          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages/numpy/core/include \
           -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
@@ -496,6 +512,7 @@ RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
 
+# Package all compiled packages to their SDK directories
 FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
 ARG TARGET_ROOT
@@ -510,6 +527,7 @@ COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
 
+# Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/pkgconfig/opencl.pc $TARGET_ROOT/usr/lib/pkgconfig/opencl.pc
@@ -520,6 +538,7 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libVSC
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLES* $TARGET_ROOT/usr/lib/
 
 
+# Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
 WORKDIR $BUILD_ROOT/tmp
 # Download tensorflow
@@ -545,9 +564,10 @@ WORKDIR $BUILD_ROOT/tfproto/build
 # Compile proto files from tensorflow
 COPY tfproto/Makefile .
 
-RUN CXX=$TARGET_NAME-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
+RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
 
 
+# Package the "devel"-tagged image and prune some unneeded files
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
@@ -560,6 +580,7 @@ RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
 RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
 
 
+# Package the "runtime"-tagged image and prune some unneeded files
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
@@ -570,11 +591,13 @@ RUN find */usr/* -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and
 RUN find * -type f -name "*.a" -exec rm -f {} \;
 
 
+# Minimal container for the devel-tagged SDK
 FROM build-base AS sdk-devel
 ARG SDK_ROOT_DIR
 COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 
 
+# Minimal container for the runtime-tagged SDK
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
 ARG SDK_ROOT_DIR
 COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
