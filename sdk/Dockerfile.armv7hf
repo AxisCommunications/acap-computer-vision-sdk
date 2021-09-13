@@ -23,7 +23,7 @@ ARG UBUNTU_VERSION=20.04
 ARG UBUNTU_CODENAME=focal
 
 #-- Versions of installed packages defined as repository tags --#
-ARG NUMPY_VERSION=v1.19.5
+ARG NUMPY_VERSION=v1.17.3
 ARG OPENBLAS_VERSION=v0.3.14
 ARG OPENCV_VERSION=4.5.1
 ARG PYTHON_VERSION=3.8.8
@@ -68,7 +68,6 @@ ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV BUILD_ROOT=$BUILD_ROOT
-
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
@@ -125,17 +124,17 @@ FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VERSION
-ARG UBUNTU_ARCH
 ARG TARGET_TOOLCHAIN
 ARG TARGET_ROOT
+ARG UBUNTU_ARCH
 ARG http_proxy
 ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV BUILD_ROOT=$BUILD_ROOT
-ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
@@ -269,8 +268,9 @@ RUN echo "[openblas]\n" \
          >> site.cfg
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py build_ext -j $NUMPY_BUILD_CORES bdist_wheel
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+#RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py build_ext -j $NUMPY_BUILD_CORES bdist_wheel
+#RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
@@ -290,14 +290,17 @@ ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
 WORKDIR $BUILD_ROOT
 RUN git clone --depth 1 --branch ${SCIPY_VERSION}  https://github.com/scipy/scipy.git
 WORKDIR $BUILD_ROOT/scipy
+RUN git submodule update --init
 COPY --from=build-openblas $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
-RUN python3 -m pip install cython tempita pybind11 pythran
-RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
-RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+#RUN python3 -m pip install cython tempita pybind11 pythran
+#RUN python3 -m pip list
+RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+#RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
+#RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
 # Compile the protofiles natively
@@ -324,8 +327,9 @@ COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 WORKDIR $BUILD_ROOT/tfserving
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
-RUN python3 setup.py bdist_wheel
-RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+#RUN python3 setup.py bdist_wheel
+#RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 # Due to issues with the grpcio wheel, we force compilation of it
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six grpcio
 #RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
