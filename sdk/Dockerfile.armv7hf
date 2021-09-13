@@ -58,6 +58,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS build-base
 # Setup environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ARG BUILD_ROOT
+ARG PYTHON_VERSION
 ARG UBUNTU_ARCH
 ARG UBUNTU_CODENAME
 ARG TARGET_TOOLCHAIN
@@ -116,6 +117,7 @@ RUN mkdir -p ${BUILD_ROOT}
 # Save a string of what python major.minor version we're using
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
+
 
 # Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
