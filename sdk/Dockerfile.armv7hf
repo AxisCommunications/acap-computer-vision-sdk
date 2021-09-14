@@ -296,10 +296,11 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
-#RUN python3 -m pip install cython tempita pybind11 pythran
-#RUN python3 -m pip list
-RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install cython tempita==0.4 pybind11 pythran
+#RUN python3 setup.py install --prefix=$TARGET_ROOT/usr --use-feature=in-tree-build
+RUN python3 -m pip install . --no-build-isolation --use-feature=in-tree-build  -v -v -v --prefix=$TARGET_ROOT/usr
 #RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
+#RUN python3 setup.py bdist_wheel
 #RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
