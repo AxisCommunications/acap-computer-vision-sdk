@@ -282,7 +282,7 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 WORKDIR $BUILD_ROOT/scipy_whl
 RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/scipy-1.7.1-cp38-cp38-linux_armv7l.whl
 COPY checksums/scipy .
-RUN shasum -c scipy
+RUN shasum -a 512 -c scipy
 RUN python3 -m pip install *.whl --no-deps --prefix=$TARGET_ROOT/usr
 
 
@@ -347,7 +347,7 @@ WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
 RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.40.0-cp38-cp38-linux_armv7l.whl
 COPY checksums/grpcio .
-RUN shasum -c grpcio
+RUN shasum -a 512 -c grpcio
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
 
 
