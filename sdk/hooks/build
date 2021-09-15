@@ -5,6 +5,7 @@
 # The differentiation between targets is done by looking for whether
 # the image tag ends with "devel"
 
+echo $DOCKER_TAG; exit 0
 
 if [[ $DOCKER_TAG == *devel ]]
   then
@@ -12,7 +13,6 @@ if [[ $DOCKER_TAG == *devel ]]
   else
     TARGET="sdk-runtime"; 
 fi
-
 
 docker build --target=$TARGET -f $DOCKERFILE_PATH -t $IMAGE_NAME .
 
