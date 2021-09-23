@@ -410,8 +410,9 @@ ARG OPENCV_VERSION
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
-RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv_deps -y -f libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH libgfortran5:$UBUNTU_ARCH
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/build; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
@@ -424,19 +425,29 @@ COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
 
+
 # Get AXIS specific files for the runtime
 # The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/build/usr/lib/
+COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/build/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/build/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/build/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_TOOLCHAIN/
+
+# Setup build directory
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_TOOLCHAIN/
-COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT
-COPY --from=build-python $TARGET_ROOT $TARGET_ROOT
-COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT
+COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
+COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
+COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
-# Add missing symlink
+# Add libfido missing symlink
+WORKDIR $TARGET_ROOT/build/usr/lib
+RUN ln -s libfido.so.1 libfido.so
+
 WORKDIR $TARGET_ROOT/usr/lib
 RUN ln -s libfido.so.1 libfido.so
 
@@ -460,17 +471,17 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
           -D INSTALL_C_EXAMPLES=OFF \
           -D PYTHON3_EXECUTABLE=/usr/bin/python3 \
-          -D PYTHON3_INCLUDE_PATH=/usr/include/$(cat /tmp/python_version) \
-          -D PYTHON3_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
-          -D PYTHON_LIBRARIES=$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
-          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages/numpy/core/include \
+          -D PYTHON3_INCLUDE_PATH=$TARGET_ROOT/build/usr/include/$(cat /tmp/python_version) \
+          -D PYTHON3_LIBRARIES=$TARGET_ROOT/build/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
+          -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/build/usr/lib/$(cat /tmp/python_version)/site-packages/numpy/core/include \
           -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages \
-          -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
-          -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT" \
-          -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
-          -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/usr/include \
-          -D BLAS_LIBRARIES=$TARGET_ROOT/usr/lib/libopenblas.so \
+          -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT/build" \
+          -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT/build" \
+          -D OpenBLAS_LIB=$TARGET_ROOT/build/usr/lib/libopenblas.so \
+          -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/build/usr/include \
+          -D BLAS_LIBRARIES=$TARGET_ROOT/build/usr/lib/libopenblas.so \
           # ON:
+          -D BUILD_opencv_python3=ON \
           -D WITH_TBB=ON \
           -D WITH_OPENGL=ON \
           -D BUILD_JPEG=ON \
@@ -519,6 +530,9 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake
 
 # Build openCV libraries and other tools
 RUN make -j ${OPENCV_BUILD_CORES} install
+
+# Remove the build directory
+RUN rm -rf $TARGET_ROOT/build
 
 # Make the header files available by creating a symlink to
 # the path specified in CMAKE params
