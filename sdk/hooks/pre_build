@@ -1,2 +1,2 @@
 #!/bin/bash
-docker run  --rm --privileged multiarch/qemu-user-static --credential yes --persistent yes
+docker run --rm --privileged multiarch/qemu-user-static --credential yes --persistent yes
