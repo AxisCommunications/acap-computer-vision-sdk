@@ -25,8 +25,6 @@ ARG UBUNTU_VERSION=20.04
 ARG UBUNTU_CODENAME=focal
 
 
-
-
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.17.3
 ARG OPENBLAS_VERSION=v0.3.14
@@ -38,16 +36,16 @@ ARG TESSERACT_VERSION=4.1.1
 ARG TFSERVING_VERSION=2.0.0
 
 #-- Build parallelization  --#
-ARG OPENBLAS_BUILD_CORES=2
-ARG OPENCV_BUILD_CORES=2
-ARG PYTHON_BUILD_CORES=4
-ARG NUMPY_BUILD_CORES=4
-ARG SCIPY_BUILD_CORES=4
+ARG OPENBLAS_BUILD_CORES=16
+ARG OPENCV_BUILD_CORES=16
+ARG PYTHON_BUILD_CORES=16
+ARG NUMPY_BUILD_CORES=16
+ARG SCIPY_BUILD_CORES=16
 
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
-ARG ACAP_SDK_VERSION=1.0_beta2
+ARG ACAP_SDK_VERSION=1.1_beta1
 ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
 
 
@@ -105,7 +103,6 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
-# 	gfortran-9-aarch64-linux-gnu \
 	gfortran-aarch64-linux-gnu \
         git \
         gfortran \
@@ -162,7 +159,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gfortran \
-#	gfortran-9-aarch64-linux-gnu \
         git \
         pkg-config \
 	libxml2-dev \
@@ -207,8 +203,6 @@ WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/aarch64-linux-gnu/* $TARGET_ROOT/usr/lib/aarch64-linux-gnu/ 
 RUN rm -rf $TARGET_ROOT/lib
-
-# TARGET_TOOLCHAIN = aarch64-linux-gnu.
 
 # Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/aarch64-linux-gnu/
@@ -256,13 +250,6 @@ RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
 RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*
 
 # Build NumPy with OpenBLAS
-# This build is done emulated right now until more work
-# has been put in researching how to crosscompile
-# python packages
-# Building numpy like this vs apt-get shows ~5% lower proc times
-# in basic math ops
-# Building numpy with OpenBLAS as BLAS/Lapack vs built-in BLAS/Lapack
-# shows between 50% to 99% lower proc times depending on the linalg op used
 FROM build-base-arm AS build-python-numpy
 ARG ARCH_CFLAGS
 ARG NUMPY_BUILD_CORES
@@ -320,14 +307,14 @@ RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 
 
-
 # Compile the protofiles natively
-FROM build-base AS build-python-tfserving
+FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
     libprotobuf-dev \
     python3-grpc-tools \
     python3-grpcio
+
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
@@ -335,22 +322,22 @@ COPY tfserving/install-tf.sh .
 RUN ["chmod", "+x", "./install-tf.sh"]
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
-WORKDIR $TARGET_ROOT/usr/lib/python3/dist-packages
-COPY tfserving/tf_proto_utils.py .
+# Install the resulting tf-related packages and dependencies
+FROM build-base-arm AS build-python-tfserving
+COPY tfserving $BUILD_ROOT/tfserving
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 
-ARG TARGET_ROOT=/target-root
-RUN mkdir -p ${BUILD_ROOT}/python-grpc
-RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-        python3-grpcio:arm64 \
-        python3-protobuf:arm64
+WORKDIR $BUILD_ROOT/tfserving
+ENV PATH=$BUILD_ROOT/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
 
-WORKDIR $TARGET_ROOT
-RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
-RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
-RUN cp -r lib/* usr/lib/ && rm -rf lib
-WORKDIR $TARGET_ROOT/usr
-RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+# Download precompiled grpc wheel
+WORKDIR $BUILD_ROOT/grpcio_whl
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr --no-deps --no-binary :all: grpcio
 
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
@@ -386,7 +373,6 @@ RUN make
 RUN make install
 RUN ldconfig
 
-
 FROM build-base-arm AS build-python-pytesseract
 ARG PYTESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/pillow_deps
@@ -397,11 +383,6 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
 RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
-#WORKDIR $TARGET_ROOT
-#RUN mkdir -p usr/lib/python3.8/dist-packages/
-#RUN mv PIL usr/lib/python3.8/dist-packages/ && mv pytesseract usr/lib/python3.8/dist-packages/
-#RUN mkdir -p usr && mv bin usr
-#RUN rm -rf Pillow*  pytesseract*
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 # Crosscompile OpenCV with AXIS VDO bindings
@@ -411,7 +392,6 @@ ARG AXIS_ARCH
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
-#ARG OPENCV_TARGET_TOOLCHAIN=aarch64-linux-gnu
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
@@ -421,19 +401,15 @@ RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
-#RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0/* /usr/lib/
-
 
 # Get AXIS specific files for the build environment
 RUN mkdir -p /usr/lib/$TARGET_TOOLCHAIN/pkgconfig
 ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_TOOLCHAIN/pkgconfig
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/include/ /usr/include/vdo
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
-#COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/ /usr/lib/$TARGET_TOOLCHAIN/
-
 
 # Get AXIS specific files for the runtime
 # The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
@@ -448,9 +424,6 @@ COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
-
-
-# SEEMS DUPLICATED STUFF, removed, I was wrong, it was not duplicated, added again, sorry johan
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
@@ -550,11 +523,6 @@ RUN ln -sf opencv4/opencv2 opencv2
 RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/dist-packages && \
     mv cv2.*.so cv2.so && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
-#WORKDIR $TARGET_ROOT/usr/lib/python3.8/dist-packages
-#RUN mv cv2.*.so cv2.so
-#RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
-
-
 
 FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
@@ -568,23 +536,6 @@ COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytessera
 COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
-#TODO: johan says that this is wrong, so I removed it
-#COPY --from=build-install-opencv-python $TARGET_ROOT $SDK_ROOT_DIR/opencv-python
-
-
-
-#TODO: FIX THIS COPY, ALSOm it must be copied in sdk-devel-prune, uncomment it once here is fixed
-# Get OpenCL-related libs from the Native SDK
-#FROM build-base AS build-opencl-devel
-#ARG AXIS_ARCH
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/pkgconfig/opencl.pc $TARGET_ROOT/usr/lib/pkgconfig/opencl.pc
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libEGL* $TARGET_ROOT/usr/lib/
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libOpenCL* $TARGET_ROOT/usr/lib/
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGAL* $TARGET_ROOT/usr/lib/
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libVSC* $TARGET_ROOT/usr/lib/
-#COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLES* $TARGET_ROOT/usr/lib/
-
 
 # Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
@@ -619,8 +570,6 @@ RUN CXX=aarch64-linux-gnu-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
-#COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
-#TODO: FIX THIS
 COPY --from=build-tensorflow-proto-devel $TARGET_ROOT $SDK_ROOT_DIR/tfproto
 
 # General pruning
@@ -628,15 +577,11 @@ WORKDIR $SDK_ROOT_DIR
 RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
 RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
 
-
 # Package the "runtime"-tagged image and prune some unneeded files
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
 WORKDIR $SDK_ROOT_DIR
-
-
-
 
 # Prune runtime unrelated files
 RUN find */usr/* -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
@@ -674,3 +619,4 @@ FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
 ARG SDK_ROOT_DIR 
 COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 RUN cp -r /axis/python-numpy/usr/lib/python3.8/site-packages /axis/python-numpy/usr/lib/python3.8/dist-packages/
+RUN cp /axis/python-numpy/usr/lib/python3.8/dist-packages/cv2.so /axis/python-numpy/usr/lib/python3.8/site-packages
