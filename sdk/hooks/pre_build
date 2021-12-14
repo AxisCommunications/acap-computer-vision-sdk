@@ -1,2 +1,3 @@
 #!/bin/bash
-docker run --rm --privileged multiarch/qemu-user-static:register --reset
+docker run -it --rm --privileged multiarch/qemu-user-static --credential yes --persistent yes
+docker run --privileged --rm tonistiigi/binfmt --install arm64,arm
