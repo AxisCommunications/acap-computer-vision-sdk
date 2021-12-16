@@ -38,11 +38,11 @@ ARG TESSERACT_VERSION=4.1.1
 ARG TFSERVING_VERSION=2.0.0
 
 #-- Build parallelization  --#
-ARG OPENBLAS_BUILD_CORES=2
-ARG OPENCV_BUILD_CORES=2
-ARG PYTHON_BUILD_CORES=4
-ARG NUMPY_BUILD_CORES=4
-ARG SCIPY_BUILD_CORES=4
+ARG OPENBLAS_BUILD_CORES=16
+ARG OPENCV_BUILD_CORES=16
+ARG PYTHON_BUILD_CORES=16
+ARG NUMPY_BUILD_CORES=16
+ARG SCIPY_BUILD_CORES=16
 
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
@@ -154,7 +154,7 @@ ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
 # qemu is used to emulate arm
-COPY --from=multiarch/qemu-user-static:x86_64-aarch64-6.1.0-8 /usr/bin/qemu-aarch64-static /usr/bin/
+COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-10 \
@@ -316,18 +316,22 @@ COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3 -m pip install cython tempita==0.4 pybind11 pythran
-RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
-RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
-
+#RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
+#Built wheels externally to speed up the build process, and avoid timeout in dockerhub
+RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/scipy-1.7.1-cp38-cp38-linux_aarch64.whl
+COPY checksums/scipy-arm64 .
+RUN shasum -a 512 -c scipy-arm64
+RUN python3 -m pip install *.whl --prefix=$TARGET_ROOT/usr
 
 
 # Compile the protofiles natively
-FROM build-base AS build-python-tfserving
+FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
 RUN apt-get install -y --no-install-recommends \
     libprotobuf-dev \
     python3-grpc-tools \
     python3-grpcio
+
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
@@ -335,23 +339,30 @@ COPY tfserving/install-tf.sh .
 RUN ["chmod", "+x", "./install-tf.sh"]
 RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
-WORKDIR $TARGET_ROOT/usr/lib/python3/dist-packages
-COPY tfserving/tf_proto_utils.py .
+# Install the resulting tf-related packages and dependencies
+FROM build-base-arm AS build-python-tfserving
+COPY tfserving $BUILD_ROOT/tfserving
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
+COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 
-ARG TARGET_ROOT=/target-root
-RUN mkdir -p ${BUILD_ROOT}/python-grpc
-RUN apt-get install --download-only -o=dir::cache=${BUILD_ROOT}/python-grpc -y --no-install-recommends \
-        python3-grpcio:arm64 \
-        python3-protobuf:arm64
+WORKDIR $BUILD_ROOT/tfserving
+ENV PATH=$BUILD_ROOT/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
+RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
 
-WORKDIR $TARGET_ROOT
-RUN for f in ${BUILD_ROOT}/python-grpc/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN find * -maxdepth 0 -type d -not -name 'usr' -and -not -name 'lib' -exec rm -rf {} \;
-RUN rm -rf lib/x86_64-linux-gnu usr/lib/x86_64-linux-gnu
-RUN cp -r lib/* usr/lib/ && rm -rf lib
-WORKDIR $TARGET_ROOT/usr
-RUN find * -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
+# Due to issues with the public pypi armv7l grpcio wheel, it must be compiled
+# for our platform specifically. This is currently quite a lengthy
+# operation and therefore handled manually out of build. Subject to change.
+#RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
+#RUN python3 -m pip install --prefix=$TARGET_ROOT/usr --no-deps --no-binary :all: grpcio
 
+WORKDIR $BUILD_ROOT/grpcio_whl
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
+RUN curl --remote-name https://test-wheel-acap.s3.eu-north-1.amazonaws.com/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
+COPY checksums/grpcio-arm64 .
+RUN shasum -a 512 -c grpcio-arm64
+RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -674,3 +685,5 @@ FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
 ARG SDK_ROOT_DIR 
 COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 RUN cp -r /axis/python-numpy/usr/lib/python3.8/site-packages /axis/python-numpy/usr/lib/python3.8/dist-packages/
+RUN mkdir /axis/opencv/usr/lib/python3.8/site-packages
+RUN cp /axis/opencv/usr/lib/python3.8/dist-packages/cv2.so /axis/opencv/usr/lib/python3.8/site-packages
