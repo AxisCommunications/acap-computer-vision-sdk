@@ -1,6 +1,6 @@
 #-- Build configuration --#
 # ARCH_CFLAGS is supplied as a compile option
-ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto" 
+ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto"
 # AXIS_ARCH is the AXIS platform descriptor
 ARG AXIS_ARCH=aarch64
 # BUILD_ROOT defines where in the build containers the building takes place
@@ -96,24 +96,24 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
+        g++-10 \
+        gcc \
+        gfortran \
         gfortran-$TARGET_TOOLCHAIN \
         git \
-        gfortran \
-	g++-10 \
-	gcc \
+        libc6-dev \
+        libgfortran-* \
+        libleptonica-dev \
         libtool \
-	libgfortran-* \
-	libc6-dev \
-	libxml2-dev \
-	libxslt-dev \
+        libxml2-dev \
+        libxslt-dev \
         pkg-config \
         python3-dev \
         python3-pip \
         python3-venv \
         wget \
-	libleptonica-dev \
- 	&& update-ca-certificates \
- 	&& apt-get clean
+ && update-ca-certificates \
+ && apt-get clean
 
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
@@ -135,7 +135,6 @@ ARG https_proxy
 
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV BUILD_ROOT=$BUILD_ROOT
-
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
 ENV TARGET_ROOT=$TARGET_ROOT
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
@@ -153,10 +152,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gfortran \
         git \
         pkg-config \
-	libxml2-dev \
-	libxslt-dev \
-	libgfortran-* \
-	libc6-dev \
+        libxml2-dev \
+        libxslt-dev \
+        libgfortran-* \
+        libc6-dev \
     && update-ca-certificates
 
 RUN mkdir -p ${TARGET_ROOT}
@@ -191,8 +190,8 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
         libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ 
-RUN rm -rf $TARGET_ROOT/lib
+RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
+    rm -rf $TARGET_ROOT/lib
 
 # Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/
@@ -350,13 +349,13 @@ ARG ARCH_CFLAGS
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
-    libleptonica-dev:arm64 libicu-dev:arm64 libpango1.0-dev:arm64 libcairo2-dev:arm64 \
-    libpng-dev:arm64 libjpeg8-dev:arm64 libtiff5-dev:arm64 libgomp1:arm64
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH libgomp1:$UBUNTU_ARCH
 RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
 RUN apt-get install --reinstall -y -f \
-    libleptonica-dev:arm64 libicu-dev:arm64 libpango1.0-dev:arm64 libcairo2-dev:arm64 \
-    libpng-dev:arm64 libjpeg8-dev:arm64 libtiff5-dev:arm64
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH
 
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
@@ -465,7 +464,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake
           -D WITH_OPENGL=ON \
           -D BUILD_JPEG=ON \
           -D ENABLE_NEON=ON \
-          -D CPU_BASELINE=NEON , VFPV3 \
+          -D CPU_BASELINE=NEON,VFPV3 \
           -D WITH_AXIS_VDO=ON \
           -D CMAKE_SKIP_RPATH=ON \
           -D OPENCV_SKIP_PYTHON_LOADER=ON \
@@ -507,7 +506,7 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake
           ..
 
 # Build openCV libraries and other tools
-RUN make -j ${OPENCV_BUILD_CORES} install 
+RUN make -j ${OPENCV_BUILD_CORES} install
 
 # Make the header files available by creating a symlink to
 # the path specified in CMAKE params
@@ -608,7 +607,7 @@ COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 
 # Minimal container for the runtime-tagged SDK
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
-ARG SDK_ROOT_DIR 
+ARG SDK_ROOT_DIR
 COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 RUN cp -r /axis/python-numpy/usr/lib/python3.8/site-packages /axis/python-numpy/usr/lib/python3.8/dist-packages/
 RUN mkdir /axis/opencv/usr/lib/python3.8/site-packages
