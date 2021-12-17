@@ -339,7 +339,7 @@ RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROO
 
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN curl --remote-name https://test-wheel-acap.s3.eu-north-1.amazonaws.com/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
+RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
 COPY checksums/grpcio-arm64 .
 RUN shasum -a 512 -c grpcio-arm64
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
