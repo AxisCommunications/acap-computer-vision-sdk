@@ -1,7 +1,6 @@
 #-- Build configuration --#
 # ARCH_CFLAGS is supplied as a compile option
 ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto" 
-# -mfloat-abi=hard -mfpu=neon-fp-armv8 -mneon-for-64bits"
 # AXIS_ARCH is the AXIS platform descriptor
 ARG AXIS_ARCH=aarch64
 # BUILD_ROOT defines where in the build containers the building takes place
@@ -15,7 +14,6 @@ ARG SDK_ROOT_DIR=/axis/
 # UBUNTU_ARCH is the Ubuntu platform descriptor
 ARG UBUNTU_ARCH=arm64
 # TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
-#ARG TARGET_TOOLCHAIN=aarch64
 ARG TARGET_TOOLCHAIN=aarch64-linux-gnu
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
@@ -23,9 +21,6 @@ ARG TARGET_ROOT=/target-root
 ARG UBUNTU_VERSION=20.04
 # UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
 ARG UBUNTU_CODENAME=focal
-
-
-
 
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.17.3
@@ -47,15 +42,13 @@ ARG SCIPY_BUILD_CORES=16
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
-ARG ACAP_SDK_VERSION=1.0_beta2
+ARG ACAP_SDK_VERSION=1.1_beta1
 ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
-
 
 # The ACAP Native SDK is used to get certain libs and headers
 FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
 # libs: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/
 # headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
-
 
 # Create a base image with build tools, env vars, etc.,
 FROM ubuntu:${UBUNTU_VERSION} AS build-base
@@ -71,7 +64,6 @@ ARG UBUNTU_CODENAME
 ARG http_proxy
 ARG https_proxy
 
-
 # To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
 ENV BUILD_ROOT=$BUILD_ROOT
 ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
@@ -80,7 +72,6 @@ ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
-
 
 # Add source for target arch
 RUN echo \
@@ -105,7 +96,7 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
-	gfortran-aarch64-linux-gnu \
+        gfortran-aarch64-linux-gnu \
         git \
         gfortran \
 	g++-10 \
@@ -130,7 +121,6 @@ RUN mkdir -p ${BUILD_ROOT}
 # Save a string of what python major.minor version we're using
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
-
 
 # Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
@@ -161,7 +151,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gfortran \
-#	gfortran-9-aarch64-linux-gnu \
         git \
         pkg-config \
 	libxml2-dev \
@@ -177,7 +166,6 @@ RUN mkdir -p ${BUILD_ROOT}
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
-
 # Crosscompile OpenBLAS
 FROM build-base AS build-openblas
 ARG ARCH_CFLAGS
@@ -188,7 +176,6 @@ RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/
 WORKDIR ${BUILD_ROOT}/OpenBLAS
 RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA53 CC=aarch64-linux-gnu-gcc FC=aarch64-linux-gnu-gfortran-9 HOSTCC=gcc-10
 RUN make install PREFIX=$TARGET_ROOT/usr
-
 
 # Crosscompile Python
 FROM build-base as build-python-cross
@@ -207,8 +194,6 @@ RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT;
 RUN mv $TARGET_ROOT/lib/aarch64-linux-gnu/* $TARGET_ROOT/usr/lib/aarch64-linux-gnu/ 
 RUN rm -rf $TARGET_ROOT/lib
 
-# TARGET_TOOLCHAIN = aarch64-linux-gnu.
-
 # Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/aarch64-linux-gnu/
 RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* libbz2* ..
@@ -218,7 +203,6 @@ RUN cp -r $TARGET_ROOT/usr/include/aarch64-linux-gnu/* $TARGET_ROOT/usr/include/
 RUN curl https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz -o $BUILD_ROOT/python.tgz
 RUN tar -xf $BUILD_ROOT/python.tgz -C $BUILD_ROOT/
 WORKDIR $BUILD_ROOT/Python-$PYTHON_VERSION
-
 
 # Setup crosscompilation environment
 ENV CC=aarch64-linux-gnu-gcc
@@ -315,13 +299,11 @@ COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3 -m pip install cython tempita==0.4 pybind11 pythran
-#RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
 #Built wheels externally to speed up the build process, and avoid timeout in dockerhub
 RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/scipy-1.7.1-cp38-cp38-linux_aarch64.whl
 COPY checksums/scipy-arm64 .
 RUN shasum -a 512 -c scipy-arm64
 RUN python3 -m pip install *.whl --prefix=$TARGET_ROOT/usr
-
 
 # Compile the protofiles natively
 FROM build-base AS build-python-tfserving-prestage
@@ -376,17 +358,14 @@ RUN apt-get install --reinstall -y -f \
     libleptonica-dev:arm64 libicu-dev:arm64 libpango1.0-dev:arm64 libcairo2-dev:arm64 \
     libpng-dev:arm64 libjpeg8-dev:arm64 libtiff5-dev:arm64
 
-ARG TESSERACT_TARGET_TOOLCHAIN=aarch64-linux-gnu
-
-
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
 WORKDIR ${BUILD_ROOT}/tesseract
 ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN:$LD_LIBRARY_PATH
 ENV PATH=$TARGET_ROOT/usr/bin:$PATH
-ENV CC=${TESSERACT_TARGET_TOOLCHAIN}-gcc
-ENV CXX=${TESSERACT_TARGET_TOOLCHAIN}-g++
-ENV CPP=${TESSERACT_TARGET_TOOLCHAIN}-g++
+ENV CC=${TARGET_TOOLCHAIN}-gcc
+ENV CXX=${TARGET_TOOLCHAIN}-g++
+ENV CPP=${TARGET_TOOLCHAIN}-g++
 ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
@@ -395,7 +374,6 @@ RUN ./configure --prefix=$TARGET_ROOT/usr --host=aarch64-linux-gnu
 RUN make
 RUN make install
 RUN ldconfig
-
 
 FROM build-base-arm AS build-python-pytesseract
 ARG PYTESSERACT_VERSION
@@ -416,7 +394,6 @@ ARG AXIS_ARCH
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
-#ARG OPENCV_TARGET_TOOLCHAIN=aarch64-linux-gnu
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
@@ -424,9 +401,7 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/build; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
-
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
-
 
 # Get AXIS specific files for the build environment
 RUN mkdir -p /usr/lib/$TARGET_TOOLCHAIN/pkgconfig
@@ -436,7 +411,6 @@ COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/ /usr/lib/$TARGET_TOOLCHAIN/
-
 
 # Get AXIS specific files for the runtime
 # The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
@@ -451,20 +425,10 @@ COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
-
-
-# SEEMS DUPLICATED STUFF, removed, I was wrong, it was not duplicated, added again, sorry johan
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
-
-# Add libfido missing symlink
-WORKDIR $TARGET_ROOT/build/usr/lib
-RUN ln -s libfido.so.1 libfido.so
-
-WORKDIR $TARGET_ROOT/usr/lib
-RUN ln -s libfido.so.1 libfido.so
 
 # Download OpenCV
 WORKDIR $BUILD_ROOT
@@ -554,7 +518,6 @@ RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/dist-packages && \
     mv cv2.*.so cv2.so && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
-
 FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
 ARG TARGET_ROOT
@@ -568,14 +531,10 @@ COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
-
-
-
-
-
 # Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
 WORKDIR $BUILD_ROOT/tmp
+
 # Download tensorflow
 RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.1.0.tar.gz | tar -xz --one-top-level=tf --strip-components 1
 
@@ -601,12 +560,10 @@ COPY tfproto/Makefile .
 
 RUN CXX=aarch64-linux-gnu-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
 
-
 # Package the "devel"-tagged image and prune some unneeded files
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
-#COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
 COPY --from=build-tensorflow-proto-devel $TARGET_ROOT $SDK_ROOT_DIR/tfproto
 
 # General pruning
@@ -614,15 +571,11 @@ WORKDIR $SDK_ROOT_DIR
 RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
 RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
 
-
 # Package the "runtime"-tagged image and prune some unneeded files
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
 WORKDIR $SDK_ROOT_DIR
-
-
-
 
 # Prune runtime unrelated files
 RUN find */usr/* -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
@@ -653,7 +606,6 @@ ENV TARGET_ROOT=$TARGET_ROOT
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
-
 
 # Minimal container for the runtime-tagged SDK
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
