@@ -444,6 +444,12 @@ COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
+# Add libfido missing symlink
+WORKDIR $TARGET_ROOT/build/usr/lib
+RUN ln -s libfido.so.1 libfido.so
+
+WORKDIR $TARGET_ROOT/usr/lib
+RUN ln -s libfido.so.1 libfido.so
 
 # Download OpenCV
 WORKDIR $BUILD_ROOT
