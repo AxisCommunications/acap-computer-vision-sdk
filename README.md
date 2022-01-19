@@ -61,5 +61,5 @@ The VDO integration allows accessing the camera's video streams through the Open
   * A general purpose parallel programming language.
   * *Only available on the `-devel` image as the runtime files are mounted from the camera*
 * `/axis/tfproto`: TensorFlow protobuf files
-  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-application-examples/tree/master/object-detector-cpp). 
+  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/master/object-detector-cpp). 
   * *Only available on the `-devel` image as the proto files are only used for compilation*
