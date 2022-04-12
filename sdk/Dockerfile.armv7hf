@@ -42,15 +42,14 @@ ARG SCIPY_BUILD_CORES=4
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
+ARG ACAP_SDK_UBUNTU_VERSION=20.04
 ARG ACAP_SDK_VERSION=1.1
-ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
-
+ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu${ACAP_SDK_UBUNTU_VERSION}
 
 # The ACAP Native SDK is used to get certain libs and headers
 FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
 # libs: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/
 # headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
-
 
 # Create a base image with build tools, env vars, etc.,
 FROM ubuntu:${UBUNTU_VERSION} AS build-base
@@ -74,7 +73,6 @@ ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
-
 
 # Add source for target arch
 RUN echo \
@@ -118,7 +116,6 @@ RUN mkdir -p ${BUILD_ROOT}
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
-
 # Create a emulated base image with build tools, env vars, etc.,
 FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG BUILD_ROOT
@@ -157,7 +154,6 @@ RUN mkdir -p ${BUILD_ROOT}
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
-
 # Crosscompile OpenBLAS
 FROM build-base AS build-openblas
 ARG ARCH_CFLAGS
@@ -168,7 +164,6 @@ RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/
 WORKDIR ${BUILD_ROOT}/OpenBLAS
 RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_TOOLCHAIN-gcc FC=$TARGET_TOOLCHAIN-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
-
 
 # Crosscompile Python
 FROM build-base as build-python-cross
@@ -219,7 +214,6 @@ RUN ln -s python3.*[0-9] python3
 RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version) && \
     cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version)
 
-
 # Continue Python install with installing
 # pip in emulated environment
 FROM build-base-arm as build-python
@@ -231,7 +225,6 @@ RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
 # Fix to not use static paths to $TARGET_ROOT
 RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*
-
 
 # Build NumPy with OpenBLAS
 # This build is done emulated right now until more work
@@ -274,7 +267,6 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/pyth
         libgfortran5
 RUN for f in ${BUILD_ROOT}/python-numpy-deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 
-
 FROM build-base-arm AS build-python-scipy-precompiled
 ENV PATH=$BUILD_ROOT/usr/bin:$BUILD_ROOT/usr/local/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -284,7 +276,6 @@ RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/scipy
 COPY checksums/scipy .
 RUN shasum -a 512 -c scipy
 RUN python3 -m pip install *.whl --no-deps --prefix=$TARGET_ROOT/usr
-
 
 # Build SciPy with OpenBLAS
 FROM build-base-arm AS build-python-scipy
@@ -308,7 +299,6 @@ ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
 RUN python3 -m pip install cython tempita==0.4 pybind11 pythran
 RUN python3 setup.py build_ext -j $SCIPY_BUILD_CORES bdist_wheel
 RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
-
 
 # Compile the protofiles natively
 FROM build-base AS build-python-tfserving-prestage
@@ -350,7 +340,6 @@ COPY checksums/grpcio .
 RUN shasum -a 512 -c grpcio
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
 
-
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -383,7 +372,6 @@ RUN make
 RUN make install
 RUN ldconfig
 
-
 # Get the crosscompiled tesseract package and install the python wrapper
 # pytesseract
 FROM build-base-arm AS build-python-pytesseract
@@ -399,7 +387,6 @@ ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
 RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
-
 # Crosscompile OpenCV with AXIS VDO bindings
 FROM build-base AS build-opencv
 ARG ARCH_CFLAGS
@@ -414,7 +401,6 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/opencv
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/build; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
-
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
 
 # Get AXIS specific files for the build environment
@@ -443,7 +429,6 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
-
 
 # Download OpenCV
 WORKDIR $BUILD_ROOT
@@ -537,7 +522,6 @@ RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages && \
     mv cv2.*.so cv2.so && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
-
 # Package all compiled packages to their SDK directories
 FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
@@ -558,7 +542,6 @@ COPY --from=build-python-scipy-precompiled $TARGET_ROOT $SDK_ROOT_DIR/python-sci
 
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
-
 # Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel
 ARG AXIS_ARCH
@@ -569,7 +552,6 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libOpe
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGAL* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libVSC* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLES* $TARGET_ROOT/usr/lib/
-
 
 # Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
@@ -599,7 +581,6 @@ COPY tfproto/Makefile .
 
 RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
 
-
 # Package the "devel"-tagged image and prune some unneeded files
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
@@ -612,7 +593,6 @@ WORKDIR $SDK_ROOT_DIR
 RUN find * -type d -name 'x86_64-linux-gnu' -prune -exec rm -rf {} \;
 RUN find * -type d -name 'share' -prune -exec rm -rf {} \;
 
-
 # Package the "runtime"-tagged image and prune some unneeded files
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime-prune
 ARG SDK_ROOT_DIR
@@ -622,7 +602,6 @@ WORKDIR $SDK_ROOT_DIR
 # Prune runtime unrelated files
 RUN find */usr/* -maxdepth 0 -type d -not -name 'bin' -and -not -name 'lib' -and -not -name 'sbin' -exec rm -rf {} \;
 RUN find * -type f -name "*.a" -exec rm -f {} \;
-
 
 # Minimal container for the devel-tagged SDK
 FROM build-base AS sdk-devel
@@ -649,7 +628,6 @@ ENV TARGET_ROOT=$TARGET_ROOT
 ENV UBUNTU_ARCH=$UBUNTU_ARCH
 ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
 COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
-
 
 # Minimal container for the runtime-tagged SDK
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
