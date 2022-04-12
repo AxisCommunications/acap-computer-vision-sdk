@@ -17,7 +17,7 @@ The available tags are `latest-<ARCHITECTURE>`, `latest-<ARCHITECTURE>-<runtime/
 `<VERSION_TAG>-<ARCHITECTURE>-<runtime/devel>`. The images that do not specify `runtime` or `devel` are set to be the smaller `runtime` images. The `latest`-tagged images
 are built per commit from the master branch, while the `<VERSION_TAG>`-tagged images are built per [tagged release](https://github.com/AxisCommunications/acap-computer-vision-sdk/tags).
 
-**All CV SDK images are available on DockerHub at [axisecp/acap-computer-vision-sdk](https://hub.docker.com/repository/docker/axisecp/acap-computer-vision-sdk).**
+**All CV SDK images are available on DockerHub at [axisecp/acap-computer-vision-sdk](https://hub.docker.com/r/axisecp/acap-computer-vision-sdk).**
 
 ## Instructions
 1. Select a base image suitable for your camera platform, e.g., `arm32v7/ubuntu:20.04` for running Ubuntu 20.04 natively on the ARTPEC-7 platform.
