@@ -273,7 +273,7 @@ RUN echo "[openblas]\n" \
          >> site.cfg
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
         libgfortran5
