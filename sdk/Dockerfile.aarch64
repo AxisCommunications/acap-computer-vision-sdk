@@ -318,8 +318,8 @@ WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
-RUN ["chmod", "+x", "./install-tf.sh"]
-RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
+RUN chmod +x install-tf.sh && \
+    ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
 # Install the resulting tf-related packages and dependencies
 FROM build-base-arm AS build-python-tfserving
@@ -339,15 +339,18 @@ RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROO
 #RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
 #RUN python3 -m pip install --prefix=$TARGET_ROOT/usr --no-deps --no-binary :all: grpcio
 
+# Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
 RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
 COPY checksums/grpcio-arm64 .
 RUN shasum -a 512 -c grpcio-arm64
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
+
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
+ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
@@ -376,7 +379,10 @@ RUN make
 RUN make install
 RUN ldconfig
 
+# Get the crosscompiled tesseract package and install the python wrapper
+# pytesseract
 FROM build-base-arm AS build-python-pytesseract
+ARG ARCH_CFLAGS
 ARG PYTESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/pillow_deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
@@ -422,14 +428,15 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfid
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/build/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_TOOLCHAIN/
-COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
-COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
-COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
+# Setup build directory
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
+COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
+COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
+COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 
 # Download OpenCV
 WORKDIR $BUILD_ROOT
@@ -510,6 +517,9 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake
 # Build openCV libraries and other tools
 RUN make -j ${OPENCV_BUILD_CORES} install
 
+# Remove the build directory
+RUN rm -rf $TARGET_ROOT/build
+
 # Make the header files available by creating a symlink to
 # the path specified in CMAKE params
 WORKDIR $TARGET_ROOT/usr/include
@@ -519,6 +529,7 @@ RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/dist-packages && \
     mv cv2.*.so cv2.so && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
+# Package all compiled packages to their SDK directories
 FROM ubuntu:${UBUNTU_VERSION} AS packages
 ARG SDK_ROOT_DIR
 ARG TARGET_ROOT
