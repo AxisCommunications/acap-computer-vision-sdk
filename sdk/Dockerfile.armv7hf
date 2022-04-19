@@ -33,11 +33,11 @@ ARG TESSERACT_VERSION=4.1.1
 ARG TFSERVING_VERSION=2.0.0
 
 #-- Build parallelization  --#
-ARG OPENBLAS_BUILD_CORES=2
-ARG OPENCV_BUILD_CORES=2
-ARG PYTHON_BUILD_CORES=4
-ARG NUMPY_BUILD_CORES=4
-ARG SCIPY_BUILD_CORES=4
+ARG OPENBLAS_BUILD_CORES=16
+ARG OPENCV_BUILD_CORES=16
+ARG PYTHON_BUILD_CORES=16
+ARG NUMPY_BUILD_CORES=16
+ARG SCIPY_BUILD_CORES=16
 
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
@@ -313,7 +313,8 @@ WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
-RUN ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
+RUN chmod +x install-tf.sh && \
+    ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
 # Install the resulting tf-related packages and dependencies
 FROM build-base-arm AS build-python-tfserving
@@ -347,7 +348,7 @@ ARG ARCH_CFLAGS
 ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
-RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
+RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
     libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
     libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH libgomp1:$UBUNTU_ARCH
 RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
