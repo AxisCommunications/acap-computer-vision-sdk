@@ -1,0 +1,148 @@
+#-- Build configuration --#
+# ARCH_CFLAGS is supplied as a compile option
+ARG ARCH_CFLAGS="-O2 -mcpu=cortex-a53+crypto"
+# AXIS_ARCH is the AXIS platform descriptor
+ARG AXIS_ARCH=aarch64
+# BUILD_ROOT defines where in the build containers the building takes place
+ARG BUILD_ROOT=/build-root
+# DOCKERHUB_ARCH is the DockerHub platform descriptor
+ARG DOCKERHUB_ARCH=arm64v8
+# OPENCV_MODULES defines what OpenCV modules to build
+ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
+# SDK_ROOT_DIR defines the root directory of the final SDK images
+ARG SDK_ROOT_DIR=/axis/
+# UBUNTU_ARCH is the Ubuntu platform descriptor
+ARG UBUNTU_ARCH=arm64
+# TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
+ARG TARGET_TOOLCHAIN=aarch64-linux-gnu
+# TARGET_ROOT defines where in the build containers the resulting application is put
+ARG TARGET_ROOT=/target-root
+# UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
+ARG UBUNTU_VERSION=20.04
+# UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
+ARG UBUNTU_CODENAME=focal
+
+#-- Versions of installed packages defined as repository tags --#
+ARG NUMPY_VERSION=v1.17.3
+ARG OPENBLAS_VERSION=v0.3.14
+ARG OPENCV_VERSION=4.5.1
+ARG PYTHON_VERSION=3.8.8
+ARG PYTESSERACT_VERSION=0.3.7
+ARG SCIPY_VERSION=v1.7.1
+ARG TESSERACT_VERSION=4.1.1
+ARG TFSERVING_VERSION=2.9.0
+
+#-- Build parallelization  --#
+ARG OPENBLAS_BUILD_CORES=16
+ARG OPENCV_BUILD_CORES=16
+ARG PYTHON_BUILD_CORES=16
+ARG NUMPY_BUILD_CORES=16
+ARG SCIPY_BUILD_CORES=16
+
+#-- ACAP SDK configuration --#
+ARG REPO=axisecp
+ARG ACAP_SDK_IMAGE=acap-native-sdk
+ARG ACAP_SDK_UBUNTU_VERSION=20.04
+ARG ACAP_SDK_VERSION=1.2
+ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu${ACAP_SDK_UBUNTU_VERSION}
+
+# The ACAP Native SDK is used to get certain libs and headers
+FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
+# libs: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/
+# headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
+
+# Create a base image with build tools, env vars, etc.,
+FROM ubuntu:${UBUNTU_VERSION} AS build-base
+
+# Setup environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ARG BUILD_ROOT
+ARG PYTHON_VERSION
+ARG TARGET_TOOLCHAIN
+ARG TARGET_ROOT
+ARG UBUNTU_ARCH
+ARG UBUNTU_CODENAME
+ARG http_proxy
+ARG https_proxy
+
+# To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
+ENV BUILD_ROOT=$BUILD_ROOT
+ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
+ENV TARGET_ROOT=$TARGET_ROOT
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
+ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
+ENV http_proxy=$http_proxy
+ENV https_proxy=$https_proxy
+
+# Add source for target arch
+RUN echo \
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu $UBUNTU_CODENAME-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-security main restricted universe multiverse"\
+ > /etc/apt/sources.list
+
+# Get crosscompilation toolchain and related packages
+RUN dpkg --add-architecture $UBUNTU_ARCH
+RUN apt-get update && apt-get install -yf --no-install-recommends \
+        autoconf \
+        automake \
+        autotools-dev \
+        build-essential \
+        ca-certificates \
+        crossbuild-essential-$UBUNTU_ARCH \
+        cmake \
+        curl \
+        g++-10 \
+        gcc \
+        gfortran \
+        gfortran-$TARGET_TOOLCHAIN \
+        git \
+        libc6-dev \
+        libgfortran-* \
+        libleptonica-dev \
+        libtool \
+        libxml2-dev \
+        libxslt-dev \
+        pkg-config \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        wget \
+ && update-ca-certificates \
+ && apt-get clean
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+# Save a string of what python major.minor version we're using
+# for paths, etc.
+RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
+
+
+
+# Compile the protofiles natively
+FROM build-base AS build-python-tfserving-prestage
+ARG TFSERVING_VERSION
+
+
+WORKDIR ${BUILD_ROOT}
+
+RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
+RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
+
+#curl  --remote-name https://github.com/protocolbuffers/protobuf/releases/download/v21.1/protoc-21.1-linux-aarch_64.zip
+COPY tfserving/install-tf.sh .
+RUN echo "hello!"
+RUN python3 -m pip install protobuf==4.21.1 six grpcio  
+RUN python3 -m pip install --no-dependencies grpcio-tools 
+
+
+RUN chmod +x install-tf.sh && \
+    ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
+
+
