@@ -17,7 +17,6 @@ PROTO_FILES_GRPC="$TFS_DIR/tensorflow_serving/apis/predict.proto \
                   $TFS_DIR/tensorflow_serving/apis/prediction_service.proto \
                  "
 
-
 python3 -m grpc_tools.protoc -I "$TF_DIR" -I "$TFS_DIR" --python_out="$PY_INSTALL_DIR" $PROTO_FILES
 
 python3 -m grpc_tools.protoc -I "$TF_DIR" -I "$TFS_DIR" --grpc_python_out="$PY_INSTALL_DIR" $PROTO_FILES_GRPC
