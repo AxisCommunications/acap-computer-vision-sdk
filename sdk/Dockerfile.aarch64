@@ -334,7 +334,7 @@ COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 WORKDIR $BUILD_ROOT/tfserving
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
-RUN python3 -m pip install . --use-feature=2020-resolver -v --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 
 # Due to issues with the public pypi armv7l grpcio wheel, it must be compiled
 # for our platform specifically. This is currently quite a lengthy
