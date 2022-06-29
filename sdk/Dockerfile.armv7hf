@@ -314,7 +314,7 @@ COPY tfserving/install-tf.sh .
 #grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
 #Installing directly grpcio-tools result in an older version of protobuf. 
 #So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
-RUN python3 -m pip install protobuf==4.21.1 six=1.16.0 grpcio==1.46.3
+RUN python3 -m pip install protobuf==4.21.1 six==1.16.0 grpcio==1.46.3
 RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
 RUN chmod +x install-tf.sh && \
     ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
