@@ -314,12 +314,13 @@ WORKDIR ${BUILD_ROOT}
 
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
-
-#curl  --remote-name https://github.com/protocolbuffers/protobuf/releases/download/v21.1/protoc-21.1-linux-aarch_64.zip
 COPY tfserving/install-tf.sh .
-RUN echo "hello!"
-RUN python3 -m pip install protobuf==4.21.1 six grpcio  
-RUN python3 -m pip install --no-dependencies grpcio-tools 
+
+#grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
+#Installing directly grpcio-tools result in an older version of protobuf. 
+#So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
+RUN python3 -m pip install protobuf==4.21.1 six=1.16.0 grpcio==1.46.3
+RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
 RUN chmod +x install-tf.sh && \
     ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
@@ -344,10 +345,7 @@ RUN python3 -m pip install . --use-feature=2020-resolver -v --prefix=$TARGET_ROO
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-#RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
-#COPY checksums/grpcio-arm64 .
-#RUN shasum -a 512 -c grpcio-arm64
-#RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
+#Installing with pip is fairly fast
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract

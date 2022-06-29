@@ -30,7 +30,7 @@ ARG PYTHON_VERSION=3.8.8
 ARG PYTESSERACT_VERSION=0.3.7
 ARG SCIPY_VERSION=v1.7.1
 ARG TESSERACT_VERSION=4.1.1
-ARG TFSERVING_VERSION=2.0.0
+ARG TFSERVING_VERSION=2.9.0
 
 #-- Build parallelization  --#
 ARG OPENBLAS_BUILD_CORES=16
@@ -304,15 +304,18 @@ RUN python3 -m pip install dist/*.whl --prefix=$TARGET_ROOT/usr
 # Compile the protofiles natively
 FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
-RUN apt-get install -y --no-install-recommends \
-    libprotobuf-dev \
-    python3-grpc-tools \
-    python3-grpcio
 
 WORKDIR ${BUILD_ROOT}
+
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
+
+#grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
+#Installing directly grpcio-tools result in an older version of protobuf. 
+#So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
+RUN python3 -m pip install protobuf==4.21.1 six=1.16.0 grpcio==1.46.3
+RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
 RUN chmod +x install-tf.sh && \
     ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
@@ -337,11 +340,8 @@ RUN python3 -m pip install . --use-feature=2020-resolver -v --prefix=$TARGET_ROO
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.40.0-cp38-cp38-linux_armv7l.whl
-COPY checksums/grpcio .
-RUN shasum -a 512 -c grpcio
-RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
-
+#Installing with pip is fairly fast
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -559,7 +559,7 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLE
 FROM build-base AS build-tensorflow-proto-devel
 WORKDIR $BUILD_ROOT/tmp
 # Download tensorflow
-RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.9.1.tar.gz | tar -xz --one-top-level=tf --strip-components 1
+RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.9.0.tar.gz | tar -xz --one-top-level=tf --strip-components 1
 
 # Download tensorflow serving
 RUN curl -fsSL https://github.com/tensorflow/serving/archive/2.9.0.tar.gz | tar -xz --one-top-level=tf-serving --strip-components 1
