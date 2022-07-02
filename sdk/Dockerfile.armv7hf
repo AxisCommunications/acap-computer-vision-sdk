@@ -15,6 +15,8 @@ ARG SDK_ROOT_DIR=/axis/
 ARG UBUNTU_ARCH=armhf
 # TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
 ARG TARGET_TOOLCHAIN=arm-linux-gnueabihf
+#CMAKE_TOOLCHAIN_FILE is the name of the CMAKE toolchain folder
+ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabihf
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
@@ -38,7 +40,8 @@ ARG OPENCV_BUILD_CORES=16
 ARG PYTHON_BUILD_CORES=16
 ARG NUMPY_BUILD_CORES=16
 ARG SCIPY_BUILD_CORES=16
-
+ARG TESSERACT_BUILD_CORES=16
+ARG TENSORFLOW_BUILD_CORES=16
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
@@ -97,9 +100,9 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
+        gfortran \
         gfortran-$TARGET_TOOLCHAIN \
         git \
-        gfortran \
         libtool \
         pkg-config \
         python3-dev \
@@ -347,6 +350,7 @@ FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
 ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
+ARG TESSERACT_BUILD_CORES
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
     libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
@@ -370,7 +374,7 @@ ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 RUN ./autogen.sh
 RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_TOOLCHAIN
-RUN make
+RUN make -j ${TESSERACT_BUILD_CORES}
 RUN make install
 RUN ldconfig
 
@@ -396,6 +400,7 @@ ARG AXIS_ARCH
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
+ARG CMAKE_TOOLCHAIN_FOLDER
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
@@ -446,7 +451,7 @@ RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_O
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
 
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
-RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/arm-gnueabi.toolchain.cmake \
+RUN cmake -D CMAKE_TOOLCHAIN_FILE="../platforms/linux/${CMAKE_TOOLCHAIN_FOLDER}.toolchain.cmake" \
           -D CMAKE_BUILD_TYPE=RELEASE \
            # This path will contain all opencv header files
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
@@ -557,6 +562,7 @@ COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLE
 
 # Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
+ARG TENSORFLOW_BUILD_CORES
 WORKDIR $BUILD_ROOT/tmp
 # Download tensorflow
 RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.9.0.tar.gz | tar -xz --one-top-level=tf --strip-components 1
@@ -581,7 +587,7 @@ WORKDIR $BUILD_ROOT/tfproto/build
 # Compile proto files from tensorflow
 COPY tfproto/Makefile .
 
-RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
+RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make -j ${TENSORFLOW_BUILD_CORES}
 
 # Package the "devel"-tagged image and prune some unneeded files
 FROM build-base AS sdk-devel-prune
