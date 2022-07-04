@@ -15,8 +15,8 @@ ARG SDK_ROOT_DIR=/axis/
 ARG UBUNTU_ARCH=armhf
 # TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
 ARG TARGET_TOOLCHAIN=arm-linux-gnueabihf
-#CMAKE_TOOLCHAIN_FILE is the name of the CMAKE toolchain folder
-ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabihf
+#CMAKE_TOOLCHAIN_FOLDER is the name of the CMAKE toolchain folder
+ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabi
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
@@ -343,8 +343,10 @@ RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-#Installing with pip is fairly fast
-RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3
+RUN curl --remote-name s3://acap-wheels/bin/grpcio-1.46.3-cp38-cp38-linux_armv7l.whl
+COPY checksums/grpcio .
+RUN shasum -a 512 -c grpcio
+RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS

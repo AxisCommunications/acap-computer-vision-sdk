@@ -336,8 +336,8 @@ RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-#Installing with pip is fairly fast
-RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3
+#Installing with pip on arm64 is fast enough because pypi wheels are compatible
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3 
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
@@ -535,7 +535,7 @@ COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
-#OpenCL was not present in the Native SDK when this image was 
+# Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel
 ARG AXIS_ARCH
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
