@@ -347,6 +347,7 @@ RUN curl --remote-name s3://acap-wheels/bin/grpcio-1.46.3-cp38-cp38-linux_armv7l
 COPY checksums/grpcio .
 RUN shasum -a 512 -c grpcio
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
+
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
