@@ -343,7 +343,7 @@ RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN curl --remote-name s3://acap-wheels/bin/grpcio-1.46.3-cp38-cp38-linux_armv7l.whl
+RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.46.3-cp38-cp38-linux_armv7l.whl
 COPY checksums/grpcio .
 RUN shasum -a 512 -c grpcio
 RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
