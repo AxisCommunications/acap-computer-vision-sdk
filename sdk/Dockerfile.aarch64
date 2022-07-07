@@ -15,6 +15,8 @@ ARG SDK_ROOT_DIR=/axis/
 ARG UBUNTU_ARCH=arm64
 # TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
 ARG TARGET_TOOLCHAIN=aarch64-linux-gnu
+#CMAKE_TOOLCHAIN_FILE is the name of the CMAKE toolchain folder
+ARG CMAKE_TOOLCHAIN_FOLDER=aarch64-gnu
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
@@ -30,7 +32,7 @@ ARG PYTHON_VERSION=3.8.8
 ARG PYTESSERACT_VERSION=0.3.7
 ARG SCIPY_VERSION=v1.7.1
 ARG TESSERACT_VERSION=4.1.1
-ARG TFSERVING_VERSION=2.0.0
+ARG TFSERVING_VERSION=2.9.0
 
 #-- Build parallelization  --#
 ARG OPENBLAS_BUILD_CORES=16
@@ -38,7 +40,8 @@ ARG OPENCV_BUILD_CORES=16
 ARG PYTHON_BUILD_CORES=16
 ARG NUMPY_BUILD_CORES=16
 ARG SCIPY_BUILD_CORES=16
-
+ARG TESSERACT_BUILD_CORES=16
+ARG TENSORFLOW_BUILD_CORES=16
 #-- ACAP SDK configuration --#
 ARG REPO=axisecp
 ARG ACAP_SDK_IMAGE=acap-native-sdk
@@ -97,17 +100,10 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         crossbuild-essential-$UBUNTU_ARCH \
         cmake \
         curl \
-        g++-10 \
-        gcc \
         gfortran \
         gfortran-$TARGET_TOOLCHAIN \
         git \
-        libc6-dev \
-        libgfortran-* \
-        libleptonica-dev \
         libtool \
-        libxml2-dev \
-        libxslt-dev \
         pkg-config \
         python3-dev \
         python3-pip \
@@ -146,17 +142,12 @@ ENV https_proxy=$https_proxy
 COPY --from=multiarch/qemu-user-static:x86_64-aarch64-6.1.0-8 /usr/bin/qemu-aarch64-static /usr/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc \
         build-essential \
         ca-certificates \
         curl \
         gfortran \
         git \
         pkg-config \
-        libxml2-dev \
-        libxslt-dev \
-        libgfortran-* \
-        libc6-dev \
     && update-ca-certificates
 
 RUN mkdir -p ${TARGET_ROOT}
@@ -174,7 +165,7 @@ ARG OPENBLAS_VERSION
 WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/OpenBLAS.git
 WORKDIR ${BUILD_ROOT}/OpenBLAS
-RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA53 CC=$TARGET_TOOLCHAIN-gcc FC=$TARGET_TOOLCHAIN-gfortran-9 HOSTCC=gcc
+RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA53 CC=$TARGET_TOOLCHAIN-gcc FC=$TARGET_TOOLCHAIN-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
 
 # Crosscompile Python
@@ -309,15 +300,18 @@ RUN python3 -m pip install *.whl --prefix=$TARGET_ROOT/usr
 # Compile the protofiles natively
 FROM build-base AS build-python-tfserving-prestage
 ARG TFSERVING_VERSION
-RUN apt-get install -y --no-install-recommends \
-    libprotobuf-dev \
-    python3-grpc-tools \
-    python3-grpcio
 
 WORKDIR ${BUILD_ROOT}
+
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
+
+#grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
+#Installing directly grpcio-tools result in an older version of protobuf. 
+#So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
+RUN python3 -m pip install protobuf==4.21.1 six==1.16.0 grpcio==1.46.3
+RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
 RUN chmod +x install-tf.sh && \
     ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
 
@@ -331,7 +325,7 @@ COPY --from=build-python-tfserving-prestage $TARGET_ROOT $TARGET_ROOT
 WORKDIR $BUILD_ROOT/tfserving
 ENV PATH=$BUILD_ROOT/usr/bin:$PATH
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
-RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROOT/usr
+RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 
 # Due to issues with the public pypi armv7l grpcio wheel, it must be compiled
 # for our platform specifically. This is currently quite a lengthy
@@ -342,16 +336,14 @@ RUN python3 -m pip install . --use-feature=in-tree-build -v --prefix=$TARGET_ROO
 # Download precompiled grpc wheel
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
-RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/grpcio-1.42.0-cp38-cp38-manylinux_2_17_aarch64.whl
-COPY checksums/grpcio-arm64 .
-RUN shasum -a 512 -c grpcio-arm64
-RUN python3 -m pip install --no-deps *.whl --prefix=$TARGET_ROOT/usr
-
+#Installing with pip on arm64 is fast enough because pypi wheels are compatible
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3 
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
 ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
+ARG TESSERACT_BUILD_CORES
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
     libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
@@ -375,7 +367,7 @@ ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
 RUN ./autogen.sh
 RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_TOOLCHAIN
-RUN make
+RUN make -j ${TESSERACT_BUILD_CORES}
 RUN make install
 RUN ldconfig
 
@@ -391,7 +383,7 @@ RUN apt-get install -y zlib1g-dev libjpeg8-dev
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
-RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --target=$TARGET_ROOT
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 # Crosscompile OpenCV with AXIS VDO bindings
@@ -401,6 +393,7 @@ ARG AXIS_ARCH
 ARG OPENCV_BUILD_CORES
 ARG OPENCV_MODULES
 ARG OPENCV_VERSION
+ARG CMAKE_TOOLCHAIN_FOLDER
 
 # Get required packages for both build env and target env
 RUN mkdir -p $BUILD_ROOT/opencv_deps
@@ -417,13 +410,12 @@ COPY opencv/capaxis/$TARGET_TOOLCHAIN/include/ /usr/include/vdo
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
 COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/ /usr/lib/$TARGET_TOOLCHAIN/
+
 
 # Get AXIS specific files for the runtime
 # The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/build/usr/lib/
 COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/build/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/glib-2.0 $TARGET_ROOT/usr/lib/glib-2.0
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/build/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/build/usr/lib/
 COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
@@ -452,7 +444,7 @@ RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_O
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_LAPACKE.*/set(OPENCV_LAPACKE_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/lapacke.h")/g' cmake/OpenCVFindLAPACK.cmake
 
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}/build
-RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake \
+RUN cmake -D CMAKE_TOOLCHAIN_FILE="../platforms/linux/${CMAKE_TOOLCHAIN_FOLDER}.toolchain.cmake" \
           -D CMAKE_BUILD_TYPE=RELEASE \
            # This path will contain all opencv header files
           -D CMAKE_INSTALL_PREFIX=$TARGET_ROOT/usr \
@@ -461,12 +453,12 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE=../platforms/linux/aarch64-gnu.toolchain.cmake
           -D PYTHON3_INCLUDE_PATH=$TARGET_ROOT/build/usr/include/$(cat /tmp/python_version) \
           -D PYTHON3_LIBRARIES=$TARGET_ROOT/build/usr/lib/$TARGET_TOOLCHAIN/lib$(cat /tmp/python_version).so \
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$TARGET_ROOT/build/usr/lib/$(cat /tmp/python_version)/site-packages/numpy/core/include \
-          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/dist-packages \
+          -D OPENCV_PYTHON3_INSTALL_PATH=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages \
           -D CMAKE_C_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT/build" \
           -D CMAKE_CXX_FLAGS="$ARCH_CFLAGS --sysroot=$TARGET_ROOT/build" \
-          -D OpenBLAS_LIB=$TARGET_ROOT/usr/lib/libopenblas.so \
-          -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/usr/include \
-          -D BLAS_LIBRARIES=$TARGET_ROOT/usr/lib/libopenblas.so \
+          -D OpenBLAS_LIB=$TARGET_ROOT/build/usr/lib/libopenblas.so \
+          -D OpenBLAS_INCLUDE_DIR=$TARGET_ROOT/build/usr/include \
+          -D BLAS_LIBRARIES=$TARGET_ROOT/build/usr/lib/libopenblas.so \
           # ON:
           -D BUILD_opencv_python3=ON \
           -D WITH_TBB=ON \
@@ -525,7 +517,7 @@ RUN rm -rf $TARGET_ROOT/build
 WORKDIR $TARGET_ROOT/usr/include
 RUN ln -sf opencv4/opencv2 opencv2
 
-RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/dist-packages && \
+RUN cd $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages && \
     mv cv2.*.so cv2.so && \
     cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib
 
@@ -543,14 +535,26 @@ COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 
+# Get OpenCL-related libs from the Native SDK
+FROM build-base AS build-opencl-devel
+ARG AXIS_ARCH
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/CL $TARGET_ROOT/usr/include/CL
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/pkgconfig/opencl.pc $TARGET_ROOT/usr/lib/pkgconfig/opencl.pc
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libEGL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libOpenCL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGAL* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libVSC* $TARGET_ROOT/usr/lib/
+COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libGLES* $TARGET_ROOT/usr/lib/
+
 # Development-related tensorflow proto files
 FROM build-base AS build-tensorflow-proto-devel
+ARG TENSORFLOW_BUILD_CORES
 WORKDIR $BUILD_ROOT/tmp
 # Download tensorflow
-RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.1.0.tar.gz | tar -xz --one-top-level=tf --strip-components 1
+RUN curl -fsSL https://github.com/tensorflow/tensorflow/archive/v2.9.0.tar.gz | tar -xz --one-top-level=tf --strip-components 1
 
 # Download tensorflow serving
-RUN curl -fsSL https://github.com/tensorflow/serving/archive/2.1.0.tar.gz | tar -xz --one-top-level=tf-serving --strip-components 1
+RUN curl -fsSL https://github.com/tensorflow/serving/archive/2.9.0.tar.gz | tar -xz --one-top-level=tf-serving --strip-components 1
 
 RUN mkdir -p $BUILD_ROOT/tfproto
 RUN cp -r $BUILD_ROOT/tmp/tf/tensorflow $BUILD_ROOT/tfproto/tensorflow
@@ -569,12 +573,13 @@ WORKDIR $BUILD_ROOT/tfproto/build
 # Compile proto files from tensorflow
 COPY tfproto/Makefile .
 
-RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make
+RUN CXX=$TARGET_TOOLCHAIN-g++ OUT_PATH=$TARGET_ROOT API_PATH=$BUILD_ROOT/tfproto make -j ${TENSORFLOW_BUILD_CORES}
 
 # Package the "devel"-tagged image and prune some unneeded files
 FROM build-base AS sdk-devel-prune
 ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
+COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
 COPY --from=build-tensorflow-proto-devel $TARGET_ROOT $SDK_ROOT_DIR/tfproto
 
 # General pruning
@@ -622,6 +627,3 @@ COPY --from=sdk-devel-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
 FROM ubuntu:${UBUNTU_VERSION} AS sdk-runtime
 ARG SDK_ROOT_DIR
 COPY --from=sdk-runtime-prune $SDK_ROOT_DIR $SDK_ROOT_DIR
-RUN cp -r /axis/python-numpy/usr/lib/python3.8/site-packages /axis/python-numpy/usr/lib/python3.8/dist-packages/
-RUN mkdir /axis/opencv/usr/lib/python3.8/site-packages
-RUN cp /axis/opencv/usr/lib/python3.8/dist-packages/cv2.so /axis/opencv/usr/lib/python3.8/site-packages
