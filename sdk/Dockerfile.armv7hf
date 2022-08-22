@@ -20,9 +20,9 @@ ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabi
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
-ARG UBUNTU_VERSION=20.04
+ARG UBUNTU_VERSION=22.04
 # UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
-ARG UBUNTU_CODENAME=focal
+ARG UBUNTU_CODENAME=jammy
 
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.17.3
