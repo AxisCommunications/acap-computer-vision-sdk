@@ -112,6 +112,11 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
  && update-ca-certificates \
  && apt-get clean
 
+# Need to install python3.8 to build python 3.8
+
+RUN apt-get update && apt install software-properties-common -y 
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
@@ -149,6 +154,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         pkg-config \
     && update-ca-certificates
+
+# Need to install python3.8 to build python 3.8
+
+RUN apt-get update && apt install software-properties-common -y 
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+
 
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
@@ -231,6 +242,8 @@ ARG ARCH_CFLAGS
 ARG TARGET_TOOLCHAIN
 ARG TESSERACT_VERSION
 ARG TESSERACT_BUILD_CORES
+ARG http_proxy
+ARG https_proxy
 RUN mkdir -p $BUILD_ROOT/tesseract_deps
 RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
     libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
