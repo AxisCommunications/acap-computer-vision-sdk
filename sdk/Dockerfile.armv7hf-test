@@ -1,0 +1,274 @@
+#-- Build configuration --#
+# ARCH_CFLAGS is supplied as a compile option
+ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-frame-pointer"
+# AXIS_ARCH is the AXIS platform descriptor
+ARG AXIS_ARCH=armv7hf
+# BUILD_ROOT defines where in the build containers the building takes place
+ARG BUILD_ROOT=/build-root
+# DOCKERHUB_ARCH is the DockerHub platform descriptor
+ARG DOCKERHUB_ARCH=arm32v7
+# OPENCV_MODULES defines what OpenCV modules to build
+ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
+# SDK_ROOT_DIR defines the root directory of the final SDK images
+ARG SDK_ROOT_DIR=/axis/
+# UBUNTU_ARCH is the Ubuntu platform descriptor
+ARG UBUNTU_ARCH=armhf
+# TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
+ARG TARGET_TOOLCHAIN=arm-linux-gnueabihf
+#CMAKE_TOOLCHAIN_FOLDER is the name of the CMAKE toolchain folder
+ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabi
+# TARGET_ROOT defines where in the build containers the resulting application is put
+ARG TARGET_ROOT=/target-root
+# UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
+ARG UBUNTU_VERSION=22.04
+# UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
+ARG UBUNTU_CODENAME=jammy
+
+#-- Versions of installed packages defined as repository tags --#
+ARG NUMPY_VERSION=v1.17.3
+ARG OPENBLAS_VERSION=v0.3.14
+ARG OPENCV_VERSION=4.5.1
+ARG PYTHON_VERSION=3.8.8
+ARG PYTESSERACT_VERSION=0.3.7
+ARG SCIPY_VERSION=v1.7.1
+ARG TESSERACT_VERSION=4.1.1
+ARG TFSERVING_VERSION=2.9.0
+
+#-- Build parallelization  --#
+ARG OPENBLAS_BUILD_CORES=16
+ARG OPENCV_BUILD_CORES=16
+ARG PYTHON_BUILD_CORES=16
+ARG NUMPY_BUILD_CORES=16
+ARG SCIPY_BUILD_CORES=16
+ARG TESSERACT_BUILD_CORES=16
+ARG TENSORFLOW_BUILD_CORES=16
+#-- ACAP SDK configuration --#
+ARG REPO=axisecp
+ARG ACAP_SDK_IMAGE=acap-native-sdk
+ARG ACAP_SDK_UBUNTU_VERSION=20.04
+ARG ACAP_SDK_VERSION=1.2
+ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu${ACAP_SDK_UBUNTU_VERSION}
+
+# The ACAP Native SDK is used to get certain libs and headers
+FROM ${REPO}/${ACAP_SDK_IMAGE}:${ACAP_SDK_TAG} AS acap-native-sdk
+# libs: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/
+# headers: /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/
+
+# Create a base image with build tools, env vars, etc.,
+FROM ubuntu:${UBUNTU_VERSION} AS build-base
+
+# Setup environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ARG BUILD_ROOT
+ARG PYTHON_VERSION
+ARG TARGET_TOOLCHAIN
+ARG TARGET_ROOT
+ARG UBUNTU_ARCH
+ARG UBUNTU_CODENAME
+ARG http_proxy
+ARG https_proxy
+
+# To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
+ENV BUILD_ROOT=$BUILD_ROOT
+ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
+ENV TARGET_ROOT=$TARGET_ROOT
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
+ENV UBUNTU_CODENAME=$UBUNTU_CODENAME
+ENV http_proxy=$http_proxy
+ENV https_proxy=$https_proxy
+
+# Add source for target arch
+RUN echo \
+"deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=amd64] http://us.archive.ubuntu.com/ubuntu/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=amd64] http://security.ubuntu.com/ubuntu $UBUNTU_CODENAME-security main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-updates main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-backports main restricted universe multiverse\n\
+deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-security main restricted universe multiverse"\
+ > /etc/apt/sources.list
+
+# Get crosscompilation toolchain and related packages
+RUN dpkg --add-architecture $UBUNTU_ARCH
+RUN apt-get update && apt-get install -yf --no-install-recommends \
+        autoconf \
+        automake \
+        autotools-dev \
+        build-essential \
+        ca-certificates \
+        crossbuild-essential-$UBUNTU_ARCH \
+        cmake \
+        curl \
+        gfortran \
+        gfortran-$TARGET_TOOLCHAIN \
+        git \
+        libtool \
+        pkg-config \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        wget \
+ && update-ca-certificates \
+ && apt-get clean
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+# Save a string of what python major.minor version we're using
+# for paths, etc.
+RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
+
+# Create a emulated base image with build tools, env vars, etc.,
+FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
+ARG BUILD_ROOT
+ENV DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION
+ARG TARGET_TOOLCHAIN
+ARG TARGET_ROOT
+ARG UBUNTU_ARCH
+ARG http_proxy
+ARG https_proxy
+
+# To support DOCKER_BUILDKIT=0, base ARGs are converted to ENVs to allow propagation
+ENV BUILD_ROOT=$BUILD_ROOT
+ENV TARGET_TOOLCHAIN=$TARGET_TOOLCHAIN
+ENV TARGET_ROOT=$TARGET_ROOT
+ENV UBUNTU_ARCH=$UBUNTU_ARCH
+ENV http_proxy=$http_proxy
+ENV https_proxy=$https_proxy
+
+# qemu is used to emulate arm
+COPY --from=multiarch/qemu-user-static:x86_64-arm-6.1.0-8 /usr/bin/qemu-arm-static /usr/bin/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        gfortran \
+        git \
+        pkg-config \
+    && update-ca-certificates
+
+RUN mkdir -p ${TARGET_ROOT}
+RUN mkdir -p ${BUILD_ROOT}
+
+# Save a string of what python major.minor version we're using
+# for paths, etc.
+RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-9]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
+
+
+# Crosscompile Python
+FROM build-base as build-python-cross
+ARG ARCH_CFLAGS
+ARG PYTHON_VERSION
+ARG PYTHON_BUILD_CORES
+RUN mkdir -p $BUILD_ROOT/python_deps
+WORKDIR /usr/bin
+RUN ln -s python3.*[0-9] python
+
+# Need to install python3.8 to build python 3.8
+
+RUN apt-get update && apt install software-properties-common -y 
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+
+# Get optional Python module dependencies
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
+        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
+WORKDIR $TARGET_ROOT
+RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
+    rm -rf $TARGET_ROOT/lib
+
+# Copy selected libs we need for python compilation
+WORKDIR $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/
+RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* libbz2* ..
+RUN cp -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN
+
+# Download Python
+RUN curl https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz -o $BUILD_ROOT/python.tgz
+RUN tar -xf $BUILD_ROOT/python.tgz -C $BUILD_ROOT/
+WORKDIR $BUILD_ROOT/Python-$PYTHON_VERSION
+
+# Setup crosscompilation environment
+ENV CC=$TARGET_TOOLCHAIN-gcc
+ENV CXX=$TARGET_TOOLCHAIN-g++
+ENV AR=$TARGET_TOOLCHAIN-ar
+ENV LD=$TARGET_TOOLCHAIN-ld
+ENV RANLIB=$TARGET_TOOLCHAIN-ranlib
+ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV LDFLAGS="-L/usr/lib/$TARGET_TOOLCHAIN -L$TARGET_ROOT/usr/lib"
+RUN ./configure --host=$TARGET_TOOLCHAIN --with-openssl=$TARGET_ROOT/usr \
+    --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
+    --enable-shared --disable-ipv6 \
+    ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
+    --with-lto --enable-optimizations
+RUN make HOSTPYTHON=/usr/bin/python3 -j $PYTHON_BUILD_CORES CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
+RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
+WORKDIR $TARGET_ROOT/usr/bin
+RUN ln -s python3.*[0-9] python3
+RUN mkdir -p $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version) && \
+    cp -r $TARGET_ROOT/usr/include/$(cat /tmp/python_version)/* $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/$(cat /tmp/python_version)
+
+# Continue Python install with installing
+# pip in emulated environment
+FROM build-base-arm as build-python
+ENV PATH=$TARGET_ROOT/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
+COPY --from=build-python-cross $TARGET_ROOT $TARGET_ROOT
+WORKDIR ${BUILD_ROOT}/pip
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
+# Fix to not use static paths to $TARGET_ROOT
+RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*
+
+
+# Crosscompile the OCR engine tesseract
+FROM build-base AS build-tesseract
+ARG ARCH_CFLAGS
+ARG TARGET_TOOLCHAIN
+ARG TESSERACT_VERSION
+ARG TESSERACT_BUILD_CORES
+RUN mkdir -p $BUILD_ROOT/tesseract_deps
+RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/tesseract_deps -y -f \
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH libgomp1:$UBUNTU_ARCH
+RUN for f in $BUILD_ROOT/tesseract_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/ && rm -rf $TARGET_ROOT/lib/
+RUN apt-get install --reinstall -y -f \
+    libleptonica-dev:$UBUNTU_ARCH libicu-dev:$UBUNTU_ARCH libpango1.0-dev:$UBUNTU_ARCH libcairo2-dev:$UBUNTU_ARCH \
+    libpng-dev:$UBUNTU_ARCH libjpeg8-dev:$UBUNTU_ARCH libtiff5-dev:$UBUNTU_ARCH
+
+WORKDIR ${BUILD_ROOT}
+RUN git clone --depth 1 --branch ${TESSERACT_VERSION} https://github.com/tesseract-ocr/tesseract.git
+WORKDIR ${BUILD_ROOT}/tesseract
+ENV LD_LIBRARY_PATH=$TARGET_ROOT/usr/lib:$TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN:$LD_LIBRARY_PATH
+ENV PATH=$TARGET_ROOT/usr/bin:$PATH
+ENV CC=${TARGET_TOOLCHAIN}-gcc
+ENV CXX=${TARGET_TOOLCHAIN}-g++
+ENV CPP=${TARGET_TOOLCHAIN}-g++
+ENV CFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CXXFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+ENV CPPFLAGS="$ARCH_CFLAGS -I$TARGET_ROOT/usr/include"
+RUN ./autogen.sh
+RUN ./configure --prefix=$TARGET_ROOT/usr --host=$TARGET_TOOLCHAIN
+RUN make -j ${TESSERACT_BUILD_CORES}
+RUN make install
+RUN ldconfig
+
+# Get the crosscompiled tesseract package and install the python wrapper
+# pytesseract
+FROM build-base-arm AS build-python-pytesseract
+ARG ARCH_CFLAGS
+ARG PYTESSERACT_VERSION
+RUN mkdir -p $BUILD_ROOT/pillow_deps
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/pillow_deps -y -f libjpeg8-dev
+RUN for f in $BUILD_ROOT/pillow_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
+RUN apt-get install -y zlib1g-dev libjpeg8-dev
+COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
+ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
+ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
+COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
