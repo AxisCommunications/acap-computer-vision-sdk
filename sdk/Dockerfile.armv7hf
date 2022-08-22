@@ -139,7 +139,7 @@ ENV http_proxy=$http_proxy
 ENV https_proxy=$https_proxy
 
 # qemu is used to emulate arm
-COPY --from=multiarch/qemu-user-static:x86_64-arm-5.2.0-2 /usr/bin/qemu-arm-static /usr/bin/
+COPY --from=multiarch/qemu-user-static:x86_64-arm-6.1.0-8 /usr/bin/qemu-arm-static /usr/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -177,9 +177,14 @@ RUN mkdir -p $BUILD_ROOT/python_deps
 WORKDIR /usr/bin
 RUN ln -s python3.*[0-9] python
 
+# Need to install python3.8 to build python 3.8
+
+RUN apt-get update && apt install software-properties-common -y 
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
+        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
@@ -241,7 +246,7 @@ FROM build-base-arm AS build-python-numpy
 ARG ARCH_CFLAGS
 ARG NUMPY_BUILD_CORES
 ARG NUMPY_VERSION
-ARG SETUPTOOLS_OVERRIDE=setuptools==60.10.0
+#ARG SETUPTOOLS_OVERRIDE=setuptools==60.10.0
 ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV NPY_NUM_BUILD_JOBS=$NUMPY_BUILD_CORES
@@ -263,7 +268,7 @@ RUN cp site.cfg.example site.cfg && \
          "lapack_libs = openblas\n" \
          "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
          >> site.cfg
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install $SETUPTOOLS_OVERRIDE cython
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
