@@ -20,9 +20,9 @@ ARG CMAKE_TOOLCHAIN_FOLDER=aarch64-gnu
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
-ARG UBUNTU_VERSION=20.04
+ARG UBUNTU_VERSION=22.04
 # UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
-ARG UBUNTU_CODENAME=focal
+ARG UBUNTU_CODENAME=jammy
 
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.17.3
@@ -177,9 +177,14 @@ RUN mkdir -p $BUILD_ROOT/python_deps
 WORKDIR /usr/bin
 RUN ln -s python3.*[0-9] python
 
+# Install python 3.8
+
+RUN apt-get update && apt install software-properties-common -y 
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
+        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
