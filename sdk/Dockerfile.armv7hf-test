@@ -158,7 +158,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Need to install python3.8 to build python 3.8
 
 RUN apt-get update && apt install software-properties-common -y 
-RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 python3.8-dev -y
 
 
 RUN mkdir -p ${TARGET_ROOT}
@@ -181,7 +181,7 @@ RUN ln -s python3.8 python
 # Need to install python3.8 to build python 3.8
 
 RUN apt-get update && apt install software-properties-common -y 
-RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
+RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 python3.8-dev -y
 
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
