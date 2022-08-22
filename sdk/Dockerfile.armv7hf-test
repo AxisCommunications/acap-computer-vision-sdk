@@ -176,7 +176,7 @@ ARG PYTHON_VERSION
 ARG PYTHON_BUILD_CORES
 RUN mkdir -p $BUILD_ROOT/python_deps
 WORKDIR /usr/bin
-RUN ln -s python3.*[0-9] python
+RUN ln -s python3.8 python
 
 # Need to install python3.8 to build python 3.8
 
