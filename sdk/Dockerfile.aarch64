@@ -178,9 +178,11 @@ WORKDIR /usr/bin
 RUN ln -s python3.*[0-9] python
 
 # Need to install python3.8 to build python 3.8
-RUN apt-get update && apt install software-properties-common -y 
-RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get install python3.8 -y
-
+# this should be removed when stepping up to 3.10
+RUN apt-get update && \
+    apt install software-properties-common -y && \
+add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && apt-get install python3.8 -y
 
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
@@ -392,7 +394,7 @@ RUN apt-get install -y zlib1g-dev libjpeg8-dev
 COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$TARGET_ROOT/usr/lib:$LD_LIBRARY_PATH
 ENV PATH=$BUILD_ROOT/usr/bin:$TARGET_ROOT/usr/bin:$PATH
-RUN CFLAGS="-I$BUILD_ROOT/usr/include -I$TARGET_ROOT/usr/include $ARCH_CFLAGS -I/$BUILD_ROOT/usr/include/$(cat /tmp/python_version)" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
+RUN CFLAGS="-I$BUILD_ROOT/usr/include -I/$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install pytesseract==${PYTESSERACT_VERSION} --prefix=$TARGET_ROOT/usr
 COPY --from=build-tesseract $TARGET_ROOT $TARGET_ROOT
 
 # Crosscompile OpenCV with AXIS VDO bindings
