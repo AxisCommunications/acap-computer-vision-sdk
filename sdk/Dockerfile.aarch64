@@ -184,7 +184,11 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && apt-get update && apt-get instal
 
 # Get optional Python module dependencies
 RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
+        libbz2-dev:$UBUNTU_ARCH \
+        zlib1g-dev:$UBUNTU_ARCH \
+        libffi-dev:$UBUNTU_ARCH \
+        libssl-dev:$UBUNTU_ARCH \
+        libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
 RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
