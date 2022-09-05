@@ -137,13 +137,14 @@ RPC_TIMEOUT = 3.0
 
 
 class InferenceClient:
-    def __init__(self, host, port):
-        channel = grpc_insecure_channel(host + ':' + str(port))
+    def __init__(self, host, port=0):
+        if port==0:
+          #This will use unix socket domain
+          channel = grpc_insecure_channel(host)
+        else:
+          channel = grpc_insecure_channel(host + ':' + str(port))
         self.stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
 
-    def __init__(self, unix_domain_socket):
-        channel = grpc_insecure_channel(unix_domain_socket)
-        self.stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)    
     
     def infer(self, inputs, model_name, model_version=None, outputs=[]):
         request = predict_pb2.PredictRequest()
