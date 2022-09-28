@@ -1,6 +1,6 @@
 # ACAP Computer Vision SDK
 
-This repository holds the Dockerfile that create the ACAP Computer Vision SDK images. These images bundle computer vision libraries and packages that are compiled for the AXIS camera platforms. The full documentation on how to use the SDK can be found in the [ACAP4 SDK documentation](https://axiscommunications.github.io/acap-documentation/docs/api/cv-api.html). Application examples, demonstrating e.g., [object detection in Python](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/master/object-detector-python), are available in the [acap-computer-vision-sdk-examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples). The SDK's Dockerfile itself can be used as a reference on how the SDK images are configured, or to rebuild select components with parameters that better fit your application.
+This repository holds the Dockerfile that create the ACAP Computer Vision SDK images. These images bundle computer vision libraries and packages that are compiled for the AXIS camera platforms. The full documentation on how to use the SDK can be found in the [ACAP4 SDK documentation](https://axiscommunications.github.io/acap-documentation/docs/api/computer-vision-sdk-apis.html). Application examples, demonstrating e.g., [object detection in Python](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-python), are available in the [acap-computer-vision-sdk-examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples). The SDK's Dockerfile itself can be used as a reference on how the SDK images are configured, or to rebuild select components with parameters that better fit your application.
 
 The Computer Vision SDK image packages are located under this `/axis` directory. The directory of a package, e.g., `/axis/opencv`, contain
 the files needed for the applications as seen from the root of the application container. Thus, merging e.g., `/axis/opencv` with the root `/` of your
@@ -16,7 +16,7 @@ building and linking against the packages. The `runtime`-tagged image attempts t
 
 The available tags are `latest-<ARCHITECTURE>`, `latest-<ARCHITECTURE>-<runtime/devel>`, `<VERSION_TAG>-<ARCHITECTURE>` and
 `<VERSION_TAG>-<ARCHITECTURE>-<runtime/devel>`. The images that do not specify `runtime` or `devel` are set to be the smaller `runtime` images. The `latest`-tagged images
-are built per commit from the master branch, while the `<VERSION_TAG>`-tagged images are built per [tagged release](https://github.com/AxisCommunications/acap-computer-vision-sdk/tags).
+are built per commit from the main branch, while the `<VERSION_TAG>`-tagged images are built per [tagged release](https://github.com/AxisCommunications/acap-computer-vision-sdk/tags).
 
 **All CV SDK images are available on DockerHub at [axisecp/acap-computer-vision-sdk](https://hub.docker.com/r/axisecp/acap-computer-vision-sdk).**
 
@@ -64,5 +64,5 @@ The VDO integration allows accessing the camera's video streams through the Open
   * A general purpose parallel programming language.
   * *Only available on the `-devel` image as the runtime files are mounted from the camera*
 * `/axis/tfproto`: TensorFlow protobuf files
-  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/master/object-detector-cpp).
+  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-cpp).
   * *Only available on the `-devel` image as the proto files are only used for compilation*
