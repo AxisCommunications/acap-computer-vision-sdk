@@ -339,7 +339,7 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
     {
         std::cout << "receive frame Suspicious B" << std::endl;
         VdoBuffer* buffer = vdo_stream_get_buffer(vdo_stream, &error);
-        std::cout << "receive frame Suspicious B and half " << buffer << " " << frame << std::endl;
+        std::cout << "receive frame Suspicious B and half " << buffer << std::endl;
         VdoFrame*  frame  = vdo_buffer_get_frame(buffer);
         std::cout << "receive frame Suspicious C " << buffer << " " << frame << std::endl;
         if(!frame)
