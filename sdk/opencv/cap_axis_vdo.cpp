@@ -218,14 +218,15 @@ double VdoCapture::getProperty(int property) const
 
 bool VdoCapture::grabFrame()
 {
+    std::cout << "I am in grab frame" << std::endl;
     g_autoptr(GError) error = NULL;
-
+    std::cout << "grabframe Step A" << std::endl;
     if(!vdo_stream)
         create();
-
+    std::cout << "grabframe Step B" << std::endl;
     vdo_buffer = nullptr;
     current_size = capture_size;
-
+    std::cout << "grabframe Step C" << std::endl;
     if(clock_gettime(CLOCK_MONOTONIC, &grabbed_ts) < 0)
         throw std::runtime_error("Clock Monotonic failed");
 
@@ -288,21 +289,25 @@ VdoCapture::convert_nv12_to_rgb3()
 
 bool VdoCapture::retrieveFrame(int, OutputArray dst)
 {
+    std::cout << "I am in retriveFrame" << std::endl;
     g_autoptr(GError) error = NULL;
-
+    
     // This should be rewritten by saving metadata at the end of the frame.
     // However this lacks VDO support.
     if(auto nbuffers = buffers.size())
     {
+        std::cout << "receive frame Step A" << std::endl;
         auto& mat = dst.getMatRef();
-
+        std::cout << "receive frame Step B" << std::endl;
         // Well-behaved clients will return VdoBuffers facilitating reuse!
         auto it = buffers.find(mat.data);
-
+        std::cout << "receive frame Step C" << std::endl;
         // Out of VdoBuffers -> Reuse the oldest one
         if ((it == buffers.cend()) && (nbuffers >= max_buffers))
         {
+            std::cout << "receive frame Step D" << std::endl;
             using pair = decltype(buffers)::value_type;
+            std::cout << "receive frame Step E" << std::endl;
             it = std::min_element(buffers.begin(), buffers.end(),
             [] (const pair& lhs, const pair& rhs)
             {
@@ -311,7 +316,7 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
                 return vdo_frame_get_sequence_nbr(lbuf) < vdo_frame_get_sequence_nbr(rbuf);
             });
         }
-
+        std::cout << "receive frame Step F" << std::endl;
         if(it != buffers.cend())
         {
             VdoBuffer* buffer = it->second;
@@ -329,12 +334,13 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
     }
 
     uint64_t grabbed_us = uint64_t(grabbed_ts.tv_sec) * 1000000u + (grabbed_ts.tv_nsec / 1000u);
-
+    std::cout << "receive frame Suspicious A" << std::endl;
     while(!vdo_buffer)
     {
+        std::cout << "receive frame Suspicious B" << std::endl;
         VdoBuffer* buffer = vdo_stream_get_buffer(vdo_stream, &error);
         VdoFrame*  frame  = vdo_buffer_get_frame(buffer);
-
+        std::cout << "receive frame Suspicious C " << buffer << " " << frame << std::endl;
         if(!frame)
             throw std::runtime_error("No Frame");
 
@@ -352,7 +358,7 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
         // Success!
         vdo_buffer = buffer;
     }
-
+    std::cout << "receive frame Suspicious C" << std::endl;
     if(!vdo_buffer_get_data(vdo_buffer))
         throw std::runtime_error("No Data");
 
