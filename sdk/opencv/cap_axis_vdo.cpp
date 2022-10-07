@@ -290,7 +290,7 @@ VdoCapture::convert_nv12_to_rgb3()
 bool VdoCapture::retrieveFrame(int, OutputArray dst)
 {
     g_autoptr(GError) error = NULL;
-    
+
     // This should be rewritten by saving metadata at the end of the frame.
     // However this lacks VDO support.
     if(auto nbuffers = buffers.size())
@@ -333,9 +333,7 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
 
     while(!vdo_buffer)
     {
-
         VdoBuffer* buffer = vdo_stream_get_buffer(vdo_stream, &error);
-
         VdoFrame*  frame  = vdo_buffer_get_frame(buffer);
 
         if(!frame)
@@ -355,7 +353,7 @@ bool VdoCapture::retrieveFrame(int, OutputArray dst)
         // Success!
         vdo_buffer = buffer;
     }
-    std::cout << "receive frame Suspicious C" << std::endl;
+
     if(!vdo_buffer_get_data(vdo_buffer))
         throw std::runtime_error("No Data");
 
@@ -413,7 +411,7 @@ bool VdoCapture::create()
     vdo_map_set_uint32(vdo_prop, "buffer.strategy", VDO_BUFFER_STRATEGY_INFINITE);
     vdo_map_set_uint16(vdo_prop, "timestamp.type", VDO_TIMESTAMP_MONO_SERVER);
 
-    vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);    
+    vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
     if(!vdo_stream)
         std::cout << "Failed to initialize vdo stream" << std::endl;
         return false;
