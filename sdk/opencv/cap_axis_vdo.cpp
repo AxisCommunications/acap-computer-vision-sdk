@@ -218,7 +218,6 @@ double VdoCapture::getProperty(int property) const
 
 bool VdoCapture::grabFrame()
 {
-
     g_autoptr(GError) error = NULL;
 
     if(!vdo_stream)
