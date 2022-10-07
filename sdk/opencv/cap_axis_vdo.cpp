@@ -218,15 +218,15 @@ double VdoCapture::getProperty(int property) const
 
 bool VdoCapture::grabFrame()
 {
-    std::cout << "I am in grab frame" << std::endl;
+
     g_autoptr(GError) error = NULL;
-    std::cout << "grabframe Step A" << std::endl;
+
     if(!vdo_stream)
         create();
-    std::cout << "grabframe Step B" << std::endl;
+    if(!vdo_stream)
+        return false;
     vdo_buffer = nullptr;
     current_size = capture_size;
-    std::cout << "grabframe Step C" << std::endl;
     if(clock_gettime(CLOCK_MONOTONIC, &grabbed_ts) < 0)
         throw std::runtime_error("Clock Monotonic failed");
 
@@ -417,9 +417,10 @@ bool VdoCapture::create()
     vdo_map_set_uint32(vdo_prop, "buffer.strategy", VDO_BUFFER_STRATEGY_INFINITE);
     vdo_map_set_uint16(vdo_prop, "timestamp.type", VDO_TIMESTAMP_MONO_SERVER);
 
-    vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
+    vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);    
     if(!vdo_stream)
-        throw std::runtime_error(error->message);
+        std::cout << "Failed to initialize vdo stream" << std::endl;
+        return false;
 
     // 1) 'settings' contains our request + default parameters
     if(g_autoptr(VdoMap) prop = vdo_stream_get_settings(vdo_stream, nullptr))
