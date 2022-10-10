@@ -416,9 +416,10 @@ bool VdoCapture::create()
     std::cout << "Creating VDO Stream" << std::endl;
     vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
     std::cout << "vdo_stream output " << vdo_stream << std::endl;
-    if(!vdo_stream)
+    if(!vdo_stream){
         std::cout << "Failed to initialize vdo stream" << std::endl;
         return false;
+    }
     std::cout << "create() VDO Stream Created" << std::endl;
     // 1) 'settings' contains our request + default parameters
     if(g_autoptr(VdoMap) prop = vdo_stream_get_settings(vdo_stream, nullptr))
