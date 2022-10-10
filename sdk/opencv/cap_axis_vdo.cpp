@@ -221,7 +221,9 @@ bool VdoCapture::grabFrame()
     g_autoptr(GError) error = NULL;
 
     if(!vdo_stream)
-        if(!create()){
+    result = create();
+    std::cout << "create result: " << result << std::endl;
+        if(result == false){
             std::cout << "create failed" << std::endl;
             return false;
         }
@@ -411,11 +413,12 @@ bool VdoCapture::create()
     vdo_map_set_uint32(vdo_prop, "buffer.strategy", VDO_BUFFER_STRATEGY_INFINITE);
     vdo_map_set_uint16(vdo_prop, "timestamp.type", VDO_TIMESTAMP_MONO_SERVER);
 
+    std::cout << "Creating VDO Stream" << std::endl;
     vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
     if(!vdo_stream)
         std::cout << "Failed to initialize vdo stream" << std::endl;
         return false;
-
+    std::cout << "create() VDO Stream Created" << std::endl;
     // 1) 'settings' contains our request + default parameters
     if(g_autoptr(VdoMap) prop = vdo_stream_get_settings(vdo_stream, nullptr))
         vdo_map_merge(vdo_prop, prop);
@@ -449,6 +452,7 @@ bool VdoCapture::create()
     if(!vdo_stream_start(vdo_stream, &error))
         throw std::runtime_error(error->message);
 
+    std::cout << "Returning true" << std::endl;
     return true;
 }
 
