@@ -223,7 +223,7 @@ bool VdoCapture::grabFrame()
     if(!vdo_stream)
         create_result = create();
     std::cout << "create result: " << create_result << std::endl;
-        if(result == false){
+        if(create_result == false){
             std::cout << "create failed" << std::endl;
             return false;
         }
