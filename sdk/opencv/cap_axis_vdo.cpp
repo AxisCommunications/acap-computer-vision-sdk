@@ -415,6 +415,7 @@ bool VdoCapture::create()
 
     std::cout << "Creating VDO Stream" << std::endl;
     vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
+    std::cout << "vdo_stream output " << vdo_stream << std::endl;
     if(!vdo_stream)
         std::cout << "Failed to initialize vdo stream" << std::endl;
         return false;
