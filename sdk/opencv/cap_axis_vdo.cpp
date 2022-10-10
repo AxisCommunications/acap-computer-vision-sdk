@@ -223,6 +223,7 @@ bool VdoCapture::grabFrame()
     if(!vdo_stream)
         create();
     if(!vdo_stream)
+        std::cout << "VdoCapture::grabFrame() - vdo_stream is NULL" << std::endl;
         return false;
     vdo_buffer = nullptr;
     current_size = capture_size;
