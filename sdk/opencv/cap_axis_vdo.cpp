@@ -222,11 +222,10 @@ bool VdoCapture::grabFrame()
 
     if(!vdo_stream)
         create();
-    if(!vdo_stream)
-        std::cout << "VdoCapture::grabFrame() - vdo_stream is NULL" << std::endl;
-        return false;
+
     vdo_buffer = nullptr;
     current_size = capture_size;
+
     if(clock_gettime(CLOCK_MONOTONIC, &grabbed_ts) < 0)
         throw std::runtime_error("Clock Monotonic failed");
 
@@ -413,8 +412,7 @@ bool VdoCapture::create()
 
     vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
     if(!vdo_stream)
-        std::cout << "Failed to initialize vdo stream" << std::endl;
-        return false;
+        throw std::runtime_error(error->message);
 
     // 1) 'settings' contains our request + default parameters
     if(g_autoptr(VdoMap) prop = vdo_stream_get_settings(vdo_stream, nullptr))
