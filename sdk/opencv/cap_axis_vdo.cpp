@@ -220,13 +220,14 @@ bool VdoCapture::grabFrame()
 {
     g_autoptr(GError) error = NULL;
     bool create_result;
-    if(!vdo_stream)
+    if(!vdo_stream){
         create_result = create();
-    std::cout << "create result: " << create_result << std::endl;
+        std::cout << "create result: " << create_result << std::endl;
         if(create_result == false){
             std::cout << "create failed" << std::endl;
             return false;
         }
+    }
     vdo_buffer = nullptr;
     current_size = capture_size;
     if(clock_gettime(CLOCK_MONOTONIC, &grabbed_ts) < 0)
