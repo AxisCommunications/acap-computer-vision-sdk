@@ -221,7 +221,7 @@ bool VdoCapture::grabFrame()
     g_autoptr(GError) error = NULL;
 
     if(!vdo_stream)
-    result = create();
+    bool result = create();
     std::cout << "create result: " << result << std::endl;
         if(result == false){
             std::cout << "create failed" << std::endl;
