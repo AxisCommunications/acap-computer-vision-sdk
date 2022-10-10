@@ -219,10 +219,10 @@ double VdoCapture::getProperty(int property) const
 bool VdoCapture::grabFrame()
 {
     g_autoptr(GError) error = NULL;
-
+    bool create_result
     if(!vdo_stream)
-    bool result = create();
-    std::cout << "create result: " << result << std::endl;
+        create_result = create();
+    std::cout << "create result: " << create_result << std::endl;
         if(result == false){
             std::cout << "create failed" << std::endl;
             return false;
