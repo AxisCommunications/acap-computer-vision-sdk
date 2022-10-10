@@ -411,10 +411,10 @@ bool VdoCapture::create()
     vdo_map_set_uint16(vdo_prop, "timestamp.type", VDO_TIMESTAMP_MONO_SERVER);
 
     vdo_stream = vdo_stream_new(vdo_prop, nullptr, &error);
-    if(!vdo_stream)
+    if(!vdo_stream){
         std::cout << "Failed to initialize vdo stream" << std::endl;
         return false;
-
+    }
     // 1) 'settings' contains our request + default parameters
     if(g_autoptr(VdoMap) prop = vdo_stream_get_settings(vdo_stream, nullptr))
         vdo_map_merge(vdo_prop, prop);
