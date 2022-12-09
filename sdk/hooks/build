@@ -1,6 +1,6 @@
 #!/bin/bash
 # A script to allow building multiple targets from a single Dockerfile such
-# that the repository does not need a separate Dockerfile for each build 
+# that the repository does not need a separate Dockerfile for each build
 
 # The differentiation between targets is done by looking for whether
 # the image tag ends with "devel"
@@ -10,9 +10,9 @@ if [[ $DOCKER_TAG == *devel ]]
   then
     TARGET="sdk-devel";
   else
-    TARGET="sdk-runtime"; 
+    TARGET="sdk-runtime";
 fi
 
 
-docker build --target=$TARGET -f $DOCKERFILE_PATH -t $IMAGE_NAME .
+docker buildx build --target=$TARGET -f $DOCKERFILE_PATH -t $IMAGE_NAME .
 
