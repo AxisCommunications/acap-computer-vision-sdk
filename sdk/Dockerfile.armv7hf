@@ -201,6 +201,7 @@ RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python
     zlib1g-dev:$UBUNTU_ARCH \
     libffi-dev:$UBUNTU_ARCH \
     libssl-dev:$UBUNTU_ARCH \
+    libsqlite3-dev:$UBUNTU_ARCH \
     libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
@@ -211,7 +212,7 @@ EOF
 
 # Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/
-RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* libbz2* ..
+RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* libbz2* libsqlite3* ..
 RUN <<EOF
 cp -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/include/
 rm -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN
@@ -236,7 +237,8 @@ RUN ./configure --host=$TARGET_TOOLCHAIN --with-openssl=$TARGET_ROOT/usr \
     --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
     --enable-shared --disable-ipv6 \
     ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
-    --with-lto --enable-optimizations
+    --with-lto --enable-optimizations \
+    --enable-loadable-sqlite-extensions
 RUN make HOSTPYTHON=/usr/bin/python3 -j $PYTHON_BUILD_CORES CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
 RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
