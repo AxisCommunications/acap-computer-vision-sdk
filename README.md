@@ -38,7 +38,7 @@ COPY --from=cv-sdk /axis/python /
 COPY --from=cv-sdk /axis/python-numpy /
 COPY --from=cv-sdk /axis/openblas /
 
-# Add your application files     
+# Add your application files
 COPY app /app
 WORKDIR /app
 CMD ["python3", "some_computer_vision_script.py"]
@@ -55,11 +55,11 @@ The VDO integration allows accessing the camera's video streams through the Open
   * `/axis/python-numpy`: [NumPy](https://github.com/numpy/numpy) - Compiled with OpenBLAS.
   * `/axis/python-scipy`: [SciPy](https://github.com/scipy/scipy) - Compiled with OpenBLAS.
   * `/axis/python-pytesseract`: [PyTesseract](https://github.com/madmaze/pytesseract) - A Python interface to the Tesseract OCR engine.
-  * `/axis/python-tfserving`: [A TensorFlow Serving inference client](./tfserving/tf_proto_utils.py#L123) - Allows interfacing with a model server using the TensorFlow Serving prediction gRPC API.  
+  * `/axis/python-tfserving`: [A TensorFlow Serving inference client](./tfserving/tf_proto_utils.py#L123) - Allows interfacing with a model server using the TensorFlow Serving prediction gRPC API.
 * `/axis/tesseract`: [Tesseract](https://github.com/tesseract-ocr/tesseract)
   * An OCR engine developed by Google. Requires model from e.g., [tessdata](https://github.com/tesseract-ocr/tessdata) to be downloaded and have its location specified in the application.
 * `/axis/openblas`: [OpenBLAS](https://github.com/xianyi/OpenBLAS)
-  * A library with optimized linear algebra operations which can accelerate many applications. 
+  * A library with optimized linear algebra operations which can accelerate many applications.
 * `/axis/opencl`: [OpenCL](https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/)
   * A general purpose parallel programming language.
   * *Only available on the `-devel` image as the runtime files are mounted from the camera*
