@@ -28,6 +28,7 @@ ARG UBUNTU_CODENAME=jammy
 
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.17.3
+ARG CYTHON_VERSION=0.29.36
 ARG OPENBLAS_VERSION=v0.3.14
 ARG OPENCV_VERSION=4.5.1
 ARG PYTHON_VERSION=3.8.8
@@ -272,6 +273,7 @@ FROM build-base-arm AS build-python-numpy
 ARG ARCH_CFLAGS
 ARG NUMPY_BUILD_CORES
 ARG NUMPY_VERSION
+ARG CYTHON_VERSION
 ARG SETUPTOOLS_OVERRIDE=setuptools==60.10.0
 ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -296,7 +298,7 @@ echo "[openblas]\n" \
     "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
     >> site.cfg
 EOF
-RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install $SETUPTOOLS_OVERRIDE cython
+RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install $SETUPTOOLS_OVERRIDE cython==$CYTHON_VERSION
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py config
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
@@ -309,6 +311,7 @@ FROM build-base-arm AS build-python-scipy
 ARG ARCH_CFLAGS
 ARG SCIPY_BUILD_CORES
 ARG SCIPY_VERSION
+ARG CYTHON_VERSION
 ENV CC="gcc -I$BUILD_ROOT/usr/include $ARCH_CFLAGS"
 ENV CFLAGS="$ARCH_CFLAGS"
 ENV LD_LIBRARY_PATH=$BUILD_ROOT/usr/lib:$LD_LIBRARY_PATH
@@ -323,7 +326,7 @@ COPY --from=build-python $TARGET_ROOT $BUILD_ROOT
 COPY --from=build-python-numpy $TARGET_ROOT $BUILD_ROOT
 ENV LAPACK=${BUILD_ROOT}/usr/lib/libopenblas.so
 ENV BLAS=${BUILD_ROOT}/usr/lib/libopenblas.so
-RUN python3 -m pip install cython tempita==0.4 pybind11 pythran
+RUN python3 -m pip install cython==$CYTHON_VERSION tempita==0.4 pybind11 pythran
 #Built wheels externally to speed up the build process, and avoid timeout in dockerhub
 RUN curl --remote-name https://acap-wheels.s3.eu-north-1.amazonaws.com/bin/scipy-1.7.1-cp38-cp38-linux_aarch64.whl
 COPY checksums/scipy-arm64 .
@@ -341,7 +344,7 @@ RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensor
 COPY tfserving/install-tf.sh .
 
 #grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
-#Installing directly grpcio-tools result in an older version of protobuf. 
+#Installing directly grpcio-tools result in an older version of protobuf.
 #So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
 RUN python3 -m pip install protobuf==4.21.1 six==1.16.0 grpcio==1.46.3
 RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
@@ -372,7 +375,7 @@ RUN python3 -m pip install . -v --prefix=$TARGET_ROOT/usr
 WORKDIR $BUILD_ROOT/grpcio_whl
 RUN python3 -m pip install --prefix=$TARGET_ROOT/usr protobuf six
 #Installing with pip on arm64 is fast enough because pypi wheels are compatible
-RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3 
+RUN python3 -m pip install --prefix=$TARGET_ROOT/usr grpcio==1.46.3
 # Crosscompile the OCR engine tesseract
 FROM build-base AS build-tesseract
 ARG ARCH_CFLAGS
