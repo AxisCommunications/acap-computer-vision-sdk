@@ -1,12 +1,12 @@
 '''
   Copyright (C) 2020 Axis Communications AB, Lund, Sweden
- 
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
- 
+
       http://www.apache.org/licenses/LICENSE-2.0
- 
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -133,7 +133,7 @@ NP_TO_PB = {
     np.bool_: types_pb2.DT_BOOL,
 }
 
-RPC_TIMEOUT = 3.0
+RPC_TIMEOUT = 120.0
 
 
 class InferenceClient:
@@ -145,7 +145,7 @@ class InferenceClient:
           channel = grpc_insecure_channel(host + ':' + str(port))
         self.stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
 
-    
+
     def infer(self, inputs, model_name, model_version=None, outputs=[]):
         request = predict_pb2.PredictRequest()
         request.model_spec.name = model_name
@@ -158,7 +158,7 @@ class InferenceClient:
 
         try:
             t0 = time.time()
-            result = self.stub.Predict(request, RPC_TIMEOUT)
+            result = self.stub.Predict(request, timeout=RPC_TIMEOUT, wait_for_ready=True)
             t1 = time.time()
             print(f'Time for call to inference-server: {1000 * (t1 - t0):.0f} ms')
         except Exception as exc:
