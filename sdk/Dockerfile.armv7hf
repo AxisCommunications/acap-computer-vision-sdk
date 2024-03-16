@@ -349,12 +349,18 @@ WORKDIR ${BUILD_ROOT}
 RUN git clone --depth 1 --branch v${TFSERVING_VERSION}  https://github.com/tensorflow/tensorflow.git
 RUN git clone --depth 1 --branch ${TFSERVING_VERSION}  https://github.com/tensorflow/serving.git
 COPY tfserving/install-tf.sh .
+COPY vdoproto/* .
 
 #grpcio-tools contains protoc, which allows to build the pb2.py files in the install-tf.sh script.
 #Installing directly grpcio-tools result in an older version of protobuf.
 #So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
 RUN python3 -m pip install protobuf==4.21.1 six==1.16.0 grpcio==1.46.3
 RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
+RUN mkdir -p $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages
+RUN python3 -m grpc_tools.protoc -I . --python_out=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages --grpc_python_out=$TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages videocapture.proto
+#Copy vdo_proto_utils.py
+RUN cp vdo_proto_utils.py $TARGET_ROOT/usr/lib/$(cat /tmp/python_version)/site-packages
+
 RUN <<EOF
 chmod +x install-tf.sh
 ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT

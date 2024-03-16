@@ -1,0 +1,72 @@
+/* Copyright 2022 Axis Communications AB. All Rights Reserved.
+==============================================================================*/
+
+syntax = "proto3";
+
+package videocapture.v1;
+
+service VideoCapture {
+  rpc NewStream(NewStreamRequest) returns (NewStreamResponse);
+  rpc DeleteStream(DeleteStreamRequest) returns (DeleteStreamResponse);
+  rpc GetFrame(GetFrameRequest) returns (GetFrameResponse);
+}
+
+message GetFrameRequest {
+        uint32 stream_id = 1;
+        uint32 frame_reference = 2;
+}
+
+message GetFrameResponse {
+        uint64 id = 1;
+        string type = 2;
+        uint32 size = 3;
+        uint64 timestamp = 4;
+        uint64 custom_timestamp = 5;
+        uint32 sequence_nbr = 6;
+        bytes data = 7;
+}
+
+enum StreamFormat {
+     // VDO_FORMAT_NONE  = -1; /* Defined in vdo-types.h, but first element must be 0 */
+     VDO_FORMAT_H264  = 0; /**< H.264 */
+     VDO_FORMAT_H265  = 1; /**< H.265 */
+     VDO_FORMAT_JPEG  = 2; /**< JPEG */
+     VDO_FORMAT_YUV   = 3; /**< YUV */
+     VDO_FORMAT_RGB   = 8; /**< RGB */
+     VDO_FORMAT_PLANAR_RGB = 9;
+}
+
+enum TimestampType {
+     VDO_TIMESTAMP_NONE = 0;
+     VDO_TIMESTAMP_UTC = 1;
+     VDO_TIMESTAMP_ZIPSTREAM = 2;
+     VDO_TIMESTAMP_DIFF = 4;
+     VDO_TIMESTAMP_MONO_CAPTURE = 8;
+     VDO_TIMESTAMP_MONO_SERVER = 16;
+     VDO_TIMESTAMP_MONO_CLIENT = 32;
+     VDO_TIMESTAMP_MONO_CLIENT_CAPTURE_DIFF = 44; /* VDO_TIMESTAMP_DIFF | VDO_TIMESTAMP_MONO_CLIENT | VDO_TIMESTAMP_MONO_CAPTURE */
+     VDO_TIMESTAMP_MONO_CLIENT_SERVER_DIFF = 52; /* VDO_TIMESTAMP_DIFF | VDO_TIMESTAMP_MONO_CLIENT | VDO_TIMESTAMP_MONO_SERVER */
+}
+
+message StreamSettings {
+        StreamFormat format = 1;
+        uint32 width = 2;
+        uint32 height = 3;
+        uint32 framerate = 4;
+        TimestampType timestamp_type = 5;
+}
+
+message NewStreamRequest {
+        StreamSettings settings = 1;
+}
+
+message NewStreamResponse {
+        uint32 stream_id = 1;
+}
+
+message DeleteStreamRequest {
+        uint32 stream_id = 1;
+}
+
+message DeleteStreamResponse {
+}
