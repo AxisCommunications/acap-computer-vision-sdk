@@ -348,7 +348,6 @@ COPY tfserving/install-tf.sh .
 #So we install first the dependencies with the desired version and then grpcio-tool without dependencies.
 RUN python3 -m pip install protobuf==4.21.1 six==1.16.0 grpcio==1.46.3
 RUN python3 -m pip install --no-dependencies grpcio-tools==1.47.0
-
 RUN <<EOF
 chmod +x install-tf.sh
 ./install-tf.sh ${BUILD_ROOT}/tensorflow ${BUILD_ROOT}/serving $TARGET_ROOT
@@ -602,7 +601,6 @@ COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
 COPY --from=build-python-vdoproto $TARGET_ROOT $SDK_ROOT_DIR/python-vdoproto
-
 
 # Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel

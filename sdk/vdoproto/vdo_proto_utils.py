@@ -51,11 +51,11 @@ class VideoCaptureClient:
             print(f"Could not download latest frame: {e}")
             return None
 
-        # Convert and save the frame as a JPEG image
+        # Convert YUV image to RGB
         data = response.data
         yuv_image_buffer = np.frombuffer(data, dtype='uint8').reshape(self.stream_height + self.stream_height // 2, self.stream_width)
-        bgr_image = cv2.cvtColor(yuv_image_buffer, cv2.COLOR_YUV2BGR_NV12)
-        return bgr_image
+        rgb_image = cv2.cvtColor(yuv_image_buffer, cv2.COLOR_YUV2RGB_NV12)
+        return rgb_image
 
     def __del__(self):
         print("Cleaning up")

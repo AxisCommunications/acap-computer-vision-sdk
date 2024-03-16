@@ -610,7 +610,6 @@ COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytessera
 COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
 COPY --from=build-python-vdoproto $TARGET_ROOT $SDK_ROOT_DIR/python-vdoproto
 
-
 # SciPy has no precompiled PyPI image with OpenBLAS for armv7l and needs to be
 # compiled for our platform. This is currently quite a lengthy
 # operation and therefore handled manually out of build. Subject to change.
