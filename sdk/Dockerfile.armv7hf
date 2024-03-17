@@ -506,10 +506,6 @@ COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 WORKDIR $BUILD_ROOT
 RUN curl -fsSL https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz | tar -xz
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}
-COPY opencv/cap_axis_vdo.cpp modules/videoio/src
-COPY opencv/detect_axis_vdo.cmake modules/videoio/cmake
-COPY opencv/axisvdo-4.5.1.patch .
-RUN patch -p 1 < axisvdo-${OPENCV_VERSION}.patch
 
 # A fix for cmake not finding our blas/lapack headers when crosscompiling
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/cblas.h")/g' cmake/OpenCVFindLAPACK.cmake
@@ -539,7 +535,6 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE="../platforms/linux/${CMAKE_TOOLCHAIN_FOLDER}.
     -D ENABLE_NEON=ON \
     -D CPU_BASELINE=NEON,VFPV3 \
     -D ENABLE_VFPV3=ON \
-    -D WITH_AXIS_VDO=ON \
     -D CMAKE_SKIP_RPATH=ON \
     -D OPENCV_SKIP_PYTHON_LOADER=ON \
     -D OPENCV_GENERATE_PKGCONFIG=ON \

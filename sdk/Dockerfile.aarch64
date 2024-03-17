@@ -466,29 +466,8 @@ RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 RUN cp -r /usr/lib/x86_64-linux-gnu/glib-2.0 /usr/lib/
 
-# Get AXIS specific files for the build environment
-RUN mkdir -p /usr/lib/$TARGET_TOOLCHAIN/pkgconfig
-ENV PKG_CONFIG_LIBDIR=/usr/share/pkgconfig:/usr/lib/$TARGET_TOOLCHAIN/pkgconfig
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/include/ /usr/include/vdo
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ /usr/lib/$TARGET_TOOLCHAIN
-COPY opencv/capaxisvdo.pc /usr/lib/$TARGET_TOOLCHAIN/pkgconfig/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/include/vdo/* /usr/include/vdo/
-
-
-# Get AXIS specific files for the runtime
-# The stubs added below should perhaps be separated from lib/ to avoid confusion vs full lib counterparts
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/build/usr/lib/
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/build/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/build/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/build/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* /usr/lib/$TARGET_TOOLCHAIN/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* /usr/lib/$TARGET_TOOLCHAIN/
 
 # Setup build directory
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/stubs/ $TARGET_ROOT/usr/lib/
-COPY opencv/capaxis/$TARGET_TOOLCHAIN/lib/ $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libfido* $TARGET_ROOT/usr/lib/
-COPY --from=acap-native-sdk /opt/axis/acapsdk/sysroots/$AXIS_ARCH/usr/lib/libvdo* $TARGET_ROOT/usr/lib/
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python $TARGET_ROOT $TARGET_ROOT/build
 COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
@@ -497,10 +476,6 @@ COPY --from=build-python-numpy $TARGET_ROOT $TARGET_ROOT/build
 WORKDIR $BUILD_ROOT
 RUN curl -fsSL https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.tar.gz | tar -xz
 WORKDIR $BUILD_ROOT/opencv-${OPENCV_VERSION}
-COPY opencv/cap_axis_vdo.cpp modules/videoio/src
-COPY opencv/detect_axis_vdo.cmake modules/videoio/cmake
-COPY opencv/axisvdo-4.5.1.patch .
-RUN patch -p 1 < axisvdo-${OPENCV_VERSION}.patch
 
 # A fix for cmake not finding our blas/lapack headers when crosscompiling
 RUN sed -i 's/_find_header_file_in_dirs(OPENCV_CBLAS.*/set(OPENCV_CBLAS_H_PATH_OpenBLAS "${LAPACK_INCLUDE_DIR}\/cblas.h")/g' cmake/OpenCVFindLAPACK.cmake
@@ -529,7 +504,6 @@ RUN cmake -D CMAKE_TOOLCHAIN_FILE="../platforms/linux/${CMAKE_TOOLCHAIN_FOLDER}.
     -D BUILD_JPEG=ON \
     -D ENABLE_NEON=ON \
     -D CPU_BASELINE=NEON,VFPV3 \
-    -D WITH_AXIS_VDO=ON \
     -D CMAKE_SKIP_RPATH=ON \
     -D OPENCV_SKIP_PYTHON_LOADER=ON \
     -D OPENCV_GENERATE_PKGCONFIG=ON \
