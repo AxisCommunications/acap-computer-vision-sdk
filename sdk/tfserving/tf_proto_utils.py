@@ -1,12 +1,12 @@
 '''
   Copyright (C) 2020 Axis Communications AB, Lund, Sweden
- 
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
- 
+
       http://www.apache.org/licenses/LICENSE-2.0
- 
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -108,11 +108,11 @@ PB_TO_NP = {
     types_pb2.DT_UINT64: np.uint64,
     types_pb2.DT_INT16: np.int16,
     types_pb2.DT_INT8: np.int8,
-    types_pb2.DT_STRING: np.object,
+    types_pb2.DT_STRING: object,
     types_pb2.DT_COMPLEX64: np.complex64,
     types_pb2.DT_COMPLEX128: np.complex128,
     types_pb2.DT_INT64: np.int64,
-    types_pb2.DT_BOOL: np.bool,
+    types_pb2.DT_BOOL: bool,
 }
 
 NP_TO_PB = {
@@ -126,11 +126,11 @@ NP_TO_PB = {
     np.uint64: types_pb2.DT_UINT64,
     np.int16: types_pb2.DT_INT16,
     np.int8: types_pb2.DT_INT8,
-    np.object: types_pb2.DT_STRING,
+    object: types_pb2.DT_STRING,
     np.complex64: types_pb2.DT_COMPLEX64,
     np.complex128: types_pb2.DT_COMPLEX128,
     np.int64: types_pb2.DT_INT64,
-    np.bool_: types_pb2.DT_BOOL,
+    bool: types_pb2.DT_BOOL,
 }
 
 RPC_TIMEOUT = 3.0
@@ -145,7 +145,7 @@ class InferenceClient:
           channel = grpc_insecure_channel(host + ':' + str(port))
         self.stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
 
-    
+
     def infer(self, inputs, model_name, model_version=None, outputs=[]):
         request = predict_pb2.PredictRequest()
         request.model_spec.name = model_name
