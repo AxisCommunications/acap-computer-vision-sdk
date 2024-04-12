@@ -572,9 +572,9 @@ COPY --from=build-python $TARGET_ROOT $SDK_ROOT_DIR/python
 COPY --from=build-python-numpy $TARGET_ROOT $SDK_ROOT_DIR/python-numpy
 COPY --from=build-python-pytesseract $TARGET_ROOT $SDK_ROOT_DIR/python-pytesseract
 COPY --from=build-python-tfserving $TARGET_ROOT $SDK_ROOT_DIR/python-tfserving
+COPY --from=build-python-vdoproto $TARGET_ROOT $SDK_ROOT_DIR/python-vdoproto
 COPY --from=build-python-scipy $TARGET_ROOT $SDK_ROOT_DIR/python-scipy
 COPY --from=build-tesseract $TARGET_ROOT $SDK_ROOT_DIR/tesseract
-COPY --from=build-python-vdoproto $TARGET_ROOT $SDK_ROOT_DIR/python-vdoproto
 
 # Get OpenCL-related libs from the Native SDK
 FROM build-base AS build-opencl-devel
@@ -622,6 +622,7 @@ ARG SDK_ROOT_DIR
 COPY --from=packages $SDK_ROOT_DIR $SDK_ROOT_DIR
 COPY --from=build-opencl-devel $TARGET_ROOT $SDK_ROOT_DIR/opencl
 COPY --from=build-tensorflow-proto-devel $TARGET_ROOT $SDK_ROOT_DIR/tfproto
+COPY --from=build-python-vdoproto $TARGET_ROOT $SDK_ROOT_DIR/tfproto
 
 # General pruning
 WORKDIR $SDK_ROOT_DIR
