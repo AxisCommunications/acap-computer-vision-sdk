@@ -133,7 +133,7 @@ NP_TO_PB = {
     bool: types_pb2.DT_BOOL,
 }
 
-RPC_TIMEOUT = 3.0
+RPC_TIMEOUT = 120.0
 
 
 class InferenceClient:
@@ -158,7 +158,7 @@ class InferenceClient:
 
         try:
             t0 = time.time()
-            result = self.stub.Predict(request, RPC_TIMEOUT)
+            result = self.stub.Predict(request, timeout=RPC_TIMEOUT, wait_for_ready=True)
             t1 = time.time()
             print(f'Time for call to inference-server: {1000 * (t1 - t0):.0f} ms')
         except Exception as exc:
