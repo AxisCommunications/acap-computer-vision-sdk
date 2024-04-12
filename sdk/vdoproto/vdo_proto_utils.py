@@ -5,6 +5,7 @@ import cv2
 import videocapture_pb2 as vcap
 import videocapture_pb2_grpc as vcap_grpc
 
+RPC_TIMEOUT = 300
 class VideoCaptureClient:
     def __init__(self, socket, stream_width, stream_height, stream_framerate):
         self.stream_width = stream_width
@@ -19,6 +20,15 @@ class VideoCaptureClient:
     def setup_grpc_channel(self):
         print("Setting up GRPC channel")
         grpc_channel = grpc.insecure_channel(self.grpc_socket)
+        try:
+            grpc.channel_ready_future(grpc_channel).result(timeout=RPC_TIMEOUT)
+        except grpc.FutureTimeoutError:
+            print("Error connecting to gRPC server: Timed out")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error connecting to gRPC server: {e}")
+            sys.exit(1)
+
         self.capture_client = vcap_grpc.VideoCaptureStub(grpc_channel)
 
     def create_video_stream(self):
@@ -58,7 +68,7 @@ class VideoCaptureClient:
         return rgb_image
 
     def __del__(self):
-        print("Cleaning up")
+        print("Cleaning up video stream")
         if self.capture_client is not None and self.stream_id is not None:
             try:
                 request = vcap.DeleteStreamRequest(stream_id=self.stream_id)
