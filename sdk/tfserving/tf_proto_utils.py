@@ -108,11 +108,11 @@ PB_TO_NP = {
     types_pb2.DT_UINT64: np.uint64,
     types_pb2.DT_INT16: np.int16,
     types_pb2.DT_INT8: np.int8,
-    types_pb2.DT_STRING: np.object,
+    types_pb2.DT_STRING: object,
     types_pb2.DT_COMPLEX64: np.complex64,
     types_pb2.DT_COMPLEX128: np.complex128,
     types_pb2.DT_INT64: np.int64,
-    types_pb2.DT_BOOL: np.bool,
+    types_pb2.DT_BOOL: bool,
 }
 
 NP_TO_PB = {
@@ -126,11 +126,11 @@ NP_TO_PB = {
     np.uint64: types_pb2.DT_UINT64,
     np.int16: types_pb2.DT_INT16,
     np.int8: types_pb2.DT_INT8,
-    np.object: types_pb2.DT_STRING,
+    object: types_pb2.DT_STRING,
     np.complex64: types_pb2.DT_COMPLEX64,
     np.complex128: types_pb2.DT_COMPLEX128,
     np.int64: types_pb2.DT_INT64,
-    np.bool_: types_pb2.DT_BOOL,
+    bool: types_pb2.DT_BOOL,
 }
 
 RPC_TIMEOUT = 120.0
