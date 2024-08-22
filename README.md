@@ -1,5 +1,10 @@
 # ACAP Computer Vision SDK
 
+> [!WARNING]
+> The computer vision SDK is deprecated. Support will continue until the end of the LTS Axis OS 12 cycle.\
+> With the end of support of container application for armv7hf, the Computer Vision SDK is not required anymore.\
+> Supported aarch64 devices won't need the computer vision SDK to run containers, the remaining utility libraries have been moved to the [ACAP runtime repository](https://github.com/AxisCommunications/acap-runtime)
+
 This repository holds the Dockerfile that create the ACAP Computer Vision SDK images. These images bundle computer vision libraries and packages that are compiled for the AXIS camera platforms. The full documentation on how to use the SDK can be found in the [ACAP4 SDK documentation](https://axiscommunications.github.io/acap-documentation/docs/api/computer-vision-sdk-apis.html). Application examples, demonstrating e.g., [object detection in Python](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-python), are available in the [acap-computer-vision-sdk-examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples). The SDK's Dockerfile itself can be used as a reference on how the SDK images are configured, or to rebuild select components with parameters that better fit your application.
 
 The Computer Vision SDK image packages are located under this `/axis` directory. The directory of a package, e.g., `/axis/opencv`, contain
