@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > The computer vision SDK is deprecated. Support will continue until the end of the LTS Axis OS 12 cycle.\
-> It will be still possible to run analytics ACAP on the device using the [ACAP Native SDK](https://github.com/AxisCommunications/acap-native-sdk).
+> It will be still possible to run analytics ACAP on the device using the [ACAP Native SDK](https://github.com/AxisCommunications/acap-native-sdk).\
 > Examples can be found in the [ACAP Native SDK examples](https://github.com/AxisCommunications/acap-native-sdk-examples) repositorty
  
 > [!WARNING]
