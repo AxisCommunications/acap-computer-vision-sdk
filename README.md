@@ -13,7 +13,7 @@
 
 > [!NOTE]
 > - The deprecation of the ACAP Computer Vision SDK only affects container applications.
-> - It will be still possible to run analytics applications on Axis devices using
+> - It will still be possible to run analytics applications on Axis devices using
 >   ACAP Native SDK. Examples can be found in the
 >   [ACAP Native SDK examples](https://github.com/AxisCommunications/acap-native-sdk-examples) repository.
 
