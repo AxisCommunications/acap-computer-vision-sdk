@@ -2,20 +2,20 @@
 
 > [!WARNING]
 > The ACAP Computer Vision SDK is deprecated from AXIS OS 12.0.
-> - `armv7hf` is no longer supported after AXIS OS 11.11.
-> - `aarch64` will be supported until the end of the AXIS OS 12 LTS cycle. 
->   After this period, the SDK will no longer receive updates or support.
-> - From AXIS OS 12.0, the artifact ACAP Computer Vision SDK in form of a 
->   container image is removed and utility libraries and scripts have been
->   moved to [ACAP Runtime](https://github.com/AxisCommunications/acap-runtime).
->   This means that this repository is no longer needed and the reason to why
->   it's archived.
-
-> [!NOTE]
-> - The deprecation of the ACAP Computer Vision SDK only affects container applications.
-> - It will still be possible to run analytics applications on Axis devices using
+>
+> - The deprecation of the ACAP Computer Vision solution only affects container applications.
+>   It will still be possible to build and run analytics, computer vision and machine learning applications on Axis devices using
 >   ACAP Native SDK. Examples can be found in the
 >   [ACAP Native SDK examples](https://github.com/AxisCommunications/acap-native-sdk-examples) repository.
+>   For more context about this transition, please visit the, please visit the [Enhanced ACAP SDK news article](https://www.axis.com/developer-community/news/enhanced-acap-sdk).
+> - `armv7hf` is no longer supported after AXIS OS 11.11.
+> - `aarch64` will be supported until the end of the AXIS OS 12 LTS cycle.
+>   After this period, the components of the Computer Vision solution will no longer
+>   receive updates or support.
+> - From AXIS OS 12.0, the artifact ACAP Computer Vision SDK in form of a
+>   container image is removed and utility libraries and scripts have been
+>   moved to [ACAP Runtime](https://github.com/AxisCommunications/acap-runtime).
+>   This means that the ACAP Computer Vision SDK is no longer needed to run container applications.
 
 This repository holds the Dockerfiles that create the ACAP Computer Vision SDK images. These images bundle computer vision libraries and packages that are compiled for the AXIS camera platforms. The full documentation on how to use the SDK can be found in the [ACAP documentation](https://axiscommunications.github.io/acap-documentation/docs/api/computer-vision-sdk-apis.html). Application examples, demonstrating e.g., [object detection in Python](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-python), are available in the [acap-computer-vision-sdk-examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples). The SDK's Dockerfile itself can be used as a reference for how the SDK images are configured, or as a guide to rebuild select components with parameters that better fit your application.
 
