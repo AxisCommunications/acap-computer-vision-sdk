@@ -5,7 +5,7 @@
 > - The ACAP Computer Vision SDK has been archived as its components have been refactored: utility
 >   libraries and scripts are now available in [ACAP Runtime](https://github.com/AxisCommunications/acap-runtime).
 >   For usage of the new setup, see the [examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples).
->
+
 > [!Note]
 >
 > - New Axis products released on AXIS OS 12.x will not have container support.
